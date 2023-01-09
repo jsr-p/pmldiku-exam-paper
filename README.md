@@ -1,7 +1,9 @@
 
 ## PML Exam 2023
 
-- [Link to code repository](https://github.com/jsr-p/pmldiku)
+- [Code](code/)
+- [Overleaf link to paper](https://www.overleaf.com/1413687226krxbtspykqzj)
+- [Project description](code/PML2022_project_final.pdf)
 
 ## Description
 
