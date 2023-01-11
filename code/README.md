@@ -15,4 +15,4 @@
 
 # Other
 
-- [Questions TA class](questions.md)
+- [Questions TA class](./questions_ta.md)
