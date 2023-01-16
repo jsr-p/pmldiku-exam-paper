@@ -122,7 +122,10 @@ def encode_means(
     """Encodes test data into tensor of means with corresponding labels.
 
     Args:
-
+        encoder: Encoder module
+        test_loader: test dataloader
+    Returns:
+        tuple encoded means & labels
     """
     labels, all_encoded_means = [], []
     for X_b, y_b in test_loader:
