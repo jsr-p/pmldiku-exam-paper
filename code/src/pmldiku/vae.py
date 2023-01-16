@@ -98,7 +98,6 @@ class VAEImageReconstructionCallback(pl.Callback):
         self.save = save
         self.epoch = 0
 
-
     def on_train_epoch_end(self, _, pl_module):
         with torch.no_grad():
             pl_module.eval()
@@ -112,13 +111,14 @@ class VAEImageReconstructionCallback(pl.Callback):
         self.epoch += 1
 
 
-
 class Encoder(Protocol):
     def encode(self, X: torch.Tensor) -> torch.Tensor:
         ...
 
 
-def encode_means(encoder: Encoder, test_loader: torch.utils.data.DataLoader) -> tuple[np.ndarray, np.ndarray]:
+def encode_means(
+    encoder: Encoder, test_loader: torch.utils.data.DataLoader
+) -> tuple[np.ndarray, np.ndarray]:
     """Encodes test data into tensor of means with corresponding labels.
 
     Args:
