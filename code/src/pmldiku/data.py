@@ -10,8 +10,9 @@ Path.mkdir(FP_DATA, exist_ok=True)
 
 
 class MNISTWrapper:
-    def __init__(self, mnist: MNIST) -> None:
+    def __init__(self, mnist: MNIST, is_train: bool = True) -> None:
         self.mnist = mnist
+        self.is_train = is_train
 
     def extract_data(self):
         X = self.mnist.data
@@ -20,11 +21,17 @@ class MNISTWrapper:
         return X, y
 
     def setup_data_loader(
-        self, batch_size=128, use_cuda=False
+        self, batch_size=128, use_cuda=False, **kwargs
     ) -> torch.utils.data.DataLoader:
-        kwargs = {"num_workers": 1, "pin_memory": use_cuda}
+        """Returns dataloader for given MNIST dataset.
+
+        Note:
+            The dataloader has shuffle turned off if `self.is_train`.
+        """
+        if not kwargs:
+            kwargs = {"num_workers": 1, "pin_memory": use_cuda}
         loader = torch.utils.data.DataLoader(
-            dataset=self.mnist, batch_size=batch_size, shuffle=True, **kwargs
+            dataset=self.mnist, batch_size=batch_size, shuffle=self.is_train, **kwargs
         )
         return loader
 
@@ -32,7 +39,11 @@ class MNISTWrapper:
 def load_mnist(train: bool = True) -> MNISTWrapper:
     trans = transforms.ToTensor()
     mnist = MNIST(root=str(FP_DATA), train=train, download=True, transform=trans)
-    return MNISTWrapper(mnist)
+    return MNISTWrapper(mnist, is_train=train)
+
+
+def identity(x: torch.Tensor) -> torch.Tensor:
+    return x
 
 
 if __name__ == "__main__":
