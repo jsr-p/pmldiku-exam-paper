@@ -88,3 +88,18 @@ def plot_gauss_grid_imgs(decoded_imgs: np.ndarray):
     slim = 0.6
     fig.tight_layout(pad=-slim, w_pad=-slim, h_pad=-slim)
     plt.show()
+
+
+def compute_outputdim_cv(I: int, F: int, P: int, S: int):
+    """Computes the output dimension of an image after convolution.
+
+    Args:
+        I: Length of input volumne (img. dimension)
+        F: Length of filter
+        P: Padding length
+        S: Stride length
+    Return:
+        (int): output img. dimension
+    """
+    O = (I - F + 2 * P) // S + 1
+    return O
