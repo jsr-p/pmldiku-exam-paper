@@ -9,7 +9,8 @@ from torch import nn, optim
 # --------------------- UNET --------------------- #
 
 
-def sinusoidal_embedding(n, d):
+def sinusoidal_embedding(n: int, d: int) -> torch.Tensor:
+    """returns embeddings"""
     # Returns the standard positional embedding
     embedding = torch.tensor(
         [[i / 10_000 ** (2 * j / d) for j in range(d)] for i in range(n)]
@@ -22,7 +23,7 @@ def sinusoidal_embedding(n, d):
     return embedding
 
 
-class MyBlock(nn.Module):
+class UNetBlock(nn.Module):
     def __init__(
         self,
         shape,
@@ -34,7 +35,7 @@ class MyBlock(nn.Module):
         activation=None,
         normalize=True,
     ):
-        super(MyBlock, self).__init__()
+        super(UNetBlock, self).__init__()
         self.ln = nn.LayerNorm(shape)
         self.conv1 = nn.Conv2d(in_c, out_c, kernel_size, stride, padding)
         self.conv2 = nn.Conv2d(out_c, out_c, kernel_size, stride, padding)
@@ -50,9 +51,9 @@ class MyBlock(nn.Module):
         return out
 
 
-class MyUNet(nn.Module):
+class UNet(nn.Module):
     def __init__(self, n_steps=1000, time_emb_dim=100):
-        super(MyUNet, self).__init__()
+        super(UNet, self).__init__()
 
         # Sinusoidal embedding
         self.time_embed = nn.Embedding(n_steps, time_emb_dim)
@@ -62,25 +63,25 @@ class MyUNet(nn.Module):
         # First half
         self.te1 = self._make_te(time_emb_dim, 1)
         self.b1 = nn.Sequential(
-            MyBlock((1, 28, 28), 1, 10),
-            MyBlock((10, 28, 28), 10, 10),
-            MyBlock((10, 28, 28), 10, 10),
+            UNetBlock((1, 28, 28), 1, 10),
+            UNetBlock((10, 28, 28), 10, 10),
+            UNetBlock((10, 28, 28), 10, 10),
         )
         self.down1 = nn.Conv2d(10, 10, 4, 2, 1)
 
         self.te2 = self._make_te(time_emb_dim, 10)
         self.b2 = nn.Sequential(
-            MyBlock((10, 14, 14), 10, 20),
-            MyBlock((20, 14, 14), 20, 20),
-            MyBlock((20, 14, 14), 20, 20),
+            UNetBlock((10, 14, 14), 10, 20),
+            UNetBlock((20, 14, 14), 20, 20),
+            UNetBlock((20, 14, 14), 20, 20),
         )
         self.down2 = nn.Conv2d(20, 20, 4, 2, 1)
 
         self.te3 = self._make_te(time_emb_dim, 20)
         self.b3 = nn.Sequential(
-            MyBlock((20, 7, 7), 20, 40),
-            MyBlock((40, 7, 7), 40, 40),
-            MyBlock((40, 7, 7), 40, 40),
+            UNetBlock((20, 7, 7), 20, 40),
+            UNetBlock((40, 7, 7), 40, 40),
+            UNetBlock((40, 7, 7), 40, 40),
         )
         self.down3 = nn.Sequential(
             nn.Conv2d(40, 40, 2, 1), nn.SiLU(), nn.Conv2d(40, 40, 4, 2, 1)
@@ -89,9 +90,9 @@ class MyUNet(nn.Module):
         # Bottleneck
         self.te_mid = self._make_te(time_emb_dim, 40)
         self.b_mid = nn.Sequential(
-            MyBlock((40, 3, 3), 40, 20),
-            MyBlock((20, 3, 3), 20, 20),
-            MyBlock((20, 3, 3), 20, 40),
+            UNetBlock((40, 3, 3), 40, 20),
+            UNetBlock((20, 3, 3), 20, 20),
+            UNetBlock((20, 3, 3), 20, 40),
         )
 
         # Second half
@@ -103,25 +104,25 @@ class MyUNet(nn.Module):
 
         self.te4 = self._make_te(time_emb_dim, 80)
         self.b4 = nn.Sequential(
-            MyBlock((80, 7, 7), 80, 40),
-            MyBlock((40, 7, 7), 40, 20),
-            MyBlock((20, 7, 7), 20, 20),
+            UNetBlock((80, 7, 7), 80, 40),
+            UNetBlock((40, 7, 7), 40, 20),
+            UNetBlock((20, 7, 7), 20, 20),
         )
 
         self.up2 = nn.ConvTranspose2d(20, 20, 4, 2, 1)
         self.te5 = self._make_te(time_emb_dim, 40)
         self.b5 = nn.Sequential(
-            MyBlock((40, 14, 14), 40, 20),
-            MyBlock((20, 14, 14), 20, 10),
-            MyBlock((10, 14, 14), 10, 10),
+            UNetBlock((40, 14, 14), 40, 20),
+            UNetBlock((20, 14, 14), 20, 10),
+            UNetBlock((10, 14, 14), 10, 10),
         )
 
         self.up3 = nn.ConvTranspose2d(10, 10, 4, 2, 1)
         self.te_out = self._make_te(time_emb_dim, 20)
         self.b_out = nn.Sequential(
-            MyBlock((20, 28, 28), 20, 10),
-            MyBlock((10, 28, 28), 10, 10),
-            MyBlock((10, 28, 28), 10, 10, normalize=False),
+            UNetBlock((20, 28, 28), 20, 10),
+            UNetBlock((10, 28, 28), 10, 10),
+            UNetBlock((10, 28, 28), 10, 10, normalize=False),
         )
 
         self.conv_out = nn.Conv2d(10, 1, 3, 1, 1)
@@ -225,25 +226,30 @@ class DiffusionModel(Protocol):
 
 
 class LightningDiffusion(pl.LightningModule):
-    def __init__(self, config: DiffusionParams, verbose: bool = False):
+    def __init__(self, config: DiffusionParams, network: pl.LightningModule, learning_rate: float=0.001, verbose: bool = False):
         super(LightningDiffusion, self).__init__()
         self.config = config
         self.verbose = verbose
+        self.learning_rate = learning_rate
 
         self.diffusion_params = DiffusionParams(
             n_steps=config.n_steps, min_beta=config.min_beta, max_beta=config.max_beta
         )
-        self.network = MyUNet()
+        self.network = network()
         self.diffusion = Diffusion(network=self.network, params=self.diffusion_params)
+
+        self.save_hyperparameters()
 
     def on_train_start(self):
         print(f"Setting diffusion params to: {self.device}")
         self.diffusion_params.set_params_device(self.device)
 
     def training_step(self, batch, _):
-        return self.inner_step(batch, step_name="training_step")
+        loss = self.inner_step(batch, step_name="training_step")
+        self.log('mse_metric', loss)
+        return loss
 
-    def validation_step(self, *_):
+    def validation_step(self, _):
         pass
 
     def inner_step(self, batch, step_name: str):
@@ -271,5 +277,40 @@ class LightningDiffusion(pl.LightningModule):
         return mse
 
     def configure_optimizers(self):
-        optimizer = optim.Adam(self.parameters(), lr=0.001)
+        optimizer = optim.Adam(self.parameters(), lr=self.learning_rate)
         return optimizer
+
+    def generate(self, n_samples):
+
+        c, h, w = 1, 28, 28
+
+        with torch.no_grad():
+            x = torch.randn(n_samples, c, h, w).to(self.device)
+
+            for t in list(range(self.diffusion_params.n_steps))[::-1]:
+                if t % 50 == 0:
+                    print(f"t = {t}")
+                # Estimating noise to be removed
+                time_tensor = (torch.ones(n_samples, 1) * t).to(self.device).long()
+                
+                #print(time_tensor.device, x.device)
+                eta_theta = self.diffusion.backward(x, time_tensor)
+                alpha_t = self.diffusion_params.alphas[t]
+                alpha_t_bar = self.diffusion_params.alpha_bars[t]
+
+                # Partially denoising the image
+                x = (1 / alpha_t.sqrt()) * (
+                    x - (1 - alpha_t) / (1 - alpha_t_bar).sqrt() * eta_theta
+                )
+
+                if t > 0:
+                    z = torch.randn(n_samples, c, h, w).to(self.device)
+
+                    # Option 1: sigma_t squared = beta_t
+                    beta_t = self.diffusion_params.betas[t]
+                    sigma_t = beta_t.sqrt()
+
+                    # Adding some more noise like in Langevin Dynamics fashion
+                    x = x + sigma_t * z
+            
+            return x
