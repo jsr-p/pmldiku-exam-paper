@@ -9,8 +9,8 @@ from torchvision.utils import save_image
 
 from pmldiku import model_utils
 
-EncoderOutput = tuple[torch.Tensor, torch.Tensor]
-VAEOutput = tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+EncoderOutput: TypeAlias = tuple[torch.Tensor, torch.Tensor]
+VAEOutput: TypeAlias = tuple[torch.Tensor, torch.Tensor, torch.Tensor]
 
 
 class BaseVAE(pl.LightningModule):
