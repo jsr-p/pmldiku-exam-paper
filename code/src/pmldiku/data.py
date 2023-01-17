@@ -36,8 +36,9 @@ class MNISTWrapper:
         return loader
 
 
-def load_mnist(train: bool = True) -> MNISTWrapper:
-    trans = transforms.ToTensor()
+def load_mnist(train: bool = True, trans=None) -> MNISTWrapper:
+    if not trans:
+        trans = transforms.ToTensor()
     mnist = MNIST(root=str(FP_DATA), train=train, download=True, transform=trans)
     return MNISTWrapper(mnist, is_train=train)
 
