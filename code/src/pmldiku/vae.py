@@ -1,3 +1,5 @@
+"""Module to implement different VAE architectures."""
+
 from typing import Protocol, TypeAlias
 import pytorch_lightning as pl
 import numpy as np
@@ -6,6 +8,7 @@ import torch.utils.data
 from torch import nn, optim
 from torch.nn import functional as F
 from torchvision.utils import save_image
+import torch.distributions as tdist
 
 from pmldiku import model_utils
 
@@ -14,33 +17,59 @@ VAEOutput: TypeAlias = tuple[torch.Tensor, torch.Tensor, torch.Tensor]
 
 
 class BaseVAE(pl.LightningModule):
-    def __init__(self):
+    def __init__(self, hidden_dim: int = 2):
         super(BaseVAE, self).__init__()
 
+        self.hidden_dim = hidden_dim
+        self._init_network()
+
+    def _init_network(self):
         self.fc1 = nn.Linear(784, 400)
         self.fc1a = nn.Linear(400, 100)
-        self.fc21 = nn.Linear(100, 2)  # Latent space of 2D
-        self.fc22 = nn.Linear(100, 2)  # Latent space of 2D
-        self.fc3 = nn.Linear(2, 100)  # Latent space of 2D
+        self.fc21 = nn.Linear(100, self.hidden_dim)
+        self.fc22 = nn.Linear(100, self.hidden_dim)
+        self.fc3 = nn.Linear(self.hidden_dim, 100)
         self.fc3a = nn.Linear(100, 400)
         self.fc4 = nn.Linear(400, 784)
 
-    def encode(self, x: torch.Tensor):
+    def encode(self, x: torch.Tensor) -> EncoderOutput:
+        """Encodes the input image tensor.
+
+        The image is encoded into the mean and variance
+        of the encoder distribution q(z | x).
+
+        Args:
+            x: (B, 784) dimensional image tensor
+
+        Returns:
+            (EncoderOutput):
+                Mean and variance of encoder distribution.
+        """
         h1 = F.relu(self.fc1(x.view(-1, 784)))
         h2 = F.relu(self.fc1a(h1))
         return self.fc21(h2), self.fc22(h2)
 
-    def reparameterize(self, mu, logvar):
+    def reparameterize(self, mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
+        """Draws z ~ q(z | x) using the reparameterization trick."""
         std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
         return mu + eps * std
 
-    def decode(self, z):
+    def decode(self, z: torch.Tensor) -> torch.Tensor:
+        """Decodes sample from the latent distribution.
+
+        The sample from the latent distribution is decoded
+        into an image tensor.
+
+        Returns:
+            (B, 784) tensor of decoded images.
+        """
         h3 = F.relu(self.fc3(z))
         h4 = F.relu(self.fc3a(h3))
         return torch.sigmoid(self.fc4(h4))
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> VAEOutput:
+        """Forward pass of the VAE."""
         mu, logvar = self.encode(x.view(-1, 784))
         z = self.reparameterize(mu, logvar)
         return self.decode(z), mu, logvar
@@ -58,13 +87,13 @@ class CVAE(pl.LightningModule):
         self.hidden_dim = hidden_dim
 
         # Init network
-        self.init_encoder()
-        self.encode_cv_dim()
+        self._init_encoder()
+        self._encode_cv_dim()
         self.fc_mean = nn.Linear(self.total_dim_encoder, hidden_dim)
         self.fc_logvar = nn.Linear(self.total_dim_encoder, hidden_dim)
-        self.init_decoder()
+        self._init_decoder()
 
-    def init_encoder(self):
+    def _init_encoder(self):
         self.encoder = nn.Sequential(
             nn.Conv2d(
                 in_channels=1,
@@ -85,7 +114,7 @@ class CVAE(pl.LightningModule):
             nn.Flatten(),
         )
 
-    def encode_cv_dim(self):
+    def _encode_cv_dim(self):
         """Computes the dimension of input img. after encoder layer."""
         dim_cv1 = model_utils.compute_outputdim_cv(I=28, F=3, P=1, S=2)
         self.img_dim_encoder = model_utils.compute_outputdim_cv(
@@ -93,7 +122,7 @@ class CVAE(pl.LightningModule):
         )
         self.total_dim_encoder = 64 * self.img_dim_encoder**2
 
-    def init_decoder(self):
+    def _init_decoder(self):
         self.decoder = nn.Sequential(
             nn.Linear(self.hidden_dim, self.total_dim_encoder),
             nn.Unflatten(
@@ -155,6 +184,7 @@ class VAELoss:
         - https://sebastianraschka.com/pdf/lecture-notes/stat453ss21/L17_vae__slides.pdf
         - https://ai.stackexchange.com/questions/27341/in-variational-autoencoders-why-do-people-use-mse-for-the-loss
     """
+
     def __init__(self, logpx_loss: str):
         self.logpx_loss = logpx_loss
         self.set_loss_fn()
@@ -165,29 +195,48 @@ class VAELoss:
                 self.logpx_loss_fn = self.mse_loss
             case "bce":
                 self.logpx_loss_fn = self.bce_loss
+            case "cb":
+                self.logpx_loss_fn = self.cb_loss
             case _:
-                raise ValueError("Only MSE and BCE losses defined for log p(x | z)")
+                raise ValueError("Only MSE, BCE and CB losses defined for log p(x | z)")
 
-    def mse_loss(self, recon_x: torch.Tensor, x: torch.Tensor):
-        return F.mse_loss(recon_x, x, reduction="sum")
+    def mse_loss(self, recon_x: torch.Tensor, x: torch.Tensor, reduction: str = "sum"):
+        return F.mse_loss(recon_x, x, reduction=reduction)
 
-    def bce_loss(self, recon_x: torch.Tensor, x: torch.Tensor):
-        return F.binary_cross_entropy(recon_x, x, reduction="sum")
+    def cb_loss(self, recon_x: torch.Tensor, x: torch.Tensor):
+        """Implements the loss function for continuous Bernoulli r.v.s.
+
+        The loss function for the VAE with the assumption of 
+        X | Z ~ CB (continuous Bernoulli) is equal to the loss 
+        function of standard Bernoulli with an added constant term.
+        See p. 4 here:
+            https://arxiv.org/pdf/1907.06845.pdf
+        """
+        dist = tdist.ContinuousBernoulli(probs=recon_x)
+        return self.bce_loss(recon_x, x) - dist._cont_bern_log_norm().sum()
+
+    def bce_loss(self, recon_x: torch.Tensor, x: torch.Tensor, reduction: str = "sum"):
+        return F.binary_cross_entropy(recon_x, x, reduction=reduction)
+
 
     def __call__(
-        self, recon_x: torch.Tensor, x: torch.Tensor, mu: torch.Tensor, logvar: torch.Tensor
+        self,
+        recon_x: torch.Tensor,
+        x: torch.Tensor,
+        mu: torch.Tensor,
+        logvar: torch.Tensor,
     ):
-        """Loss function for VAE.
+        """Loss function for VAE; the negative ELBO.
 
-        For BCE loss it equals negative ELBO loss.
-        Reconstruction + KL divergence losses summed over all
-        elements and batch.
+        Depending on the assumption of p(x | z) the second
+        term of the loss function is either a BCE or MSE.
 
         Args:
             recon_x: tensor of dim (B, 784) of reconstructed image pixels.
             x: tensor of dim (B, 1, 28, 28) of original image pixels.
             mu: parametrized mean tensor
             logvar: parametrized logvar tensor
+
         Returns:
             (float): loss
         """
