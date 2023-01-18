@@ -253,18 +253,19 @@ class VAELossCallback(pl.Callback):
 class VAEImageReconstructionCallback(pl.Callback):
     """PyTorch Lightning metric callback."""
 
-    def __init__(self, num_epochs: int, save: bool = False):
+    def __init__(self, save: bool = False):
         super().__init__()
-        self.samples = torch.zeros(size=(num_epochs, 64, 28, 28))
+        self._samples = []
         self.save = save
         self.epoch = 0
+        self.samples: torch.Tensor
 
     def on_train_epoch_end(self, _, pl_module):
         with torch.no_grad():
             pl_module.eval()
             sample = torch.randn(64, 2).to(pl_module.device)
             sample = pl_module.vae.decode(sample)
-            self.samples[self.epoch] = sample.view(64, 28, 28)
+            self._samples.append(sample.view(64, 28, 28))
             pl_module.train()
             if self.save:
                 save_image(
@@ -272,6 +273,9 @@ class VAEImageReconstructionCallback(pl.Callback):
                     "results/sample_" + str(self.epoch) + ".png",
                 )
         self.epoch += 1
+
+    def on_train_end(self, *_):
+        self.samples = torch.stack(self._samples)
 
 
 def encode_means(
