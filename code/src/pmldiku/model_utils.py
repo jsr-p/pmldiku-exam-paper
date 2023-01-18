@@ -2,8 +2,9 @@ import math
 
 import matplotlib.pyplot as plt
 import numpy as np
-import numpy.typing as npt
 import torch
+
+import pmldiku
 
 
 def plot_img(img: np.ndarray):
@@ -18,7 +19,9 @@ def plot_loss(loss: np.ndarray, **kwargs):
     ax.set(title="Loss", xlabel="epoch", ylabel="loss", **kwargs)
 
 
-def plot_image_reconstruction(images: np.ndarray, num_cols: int = 3, slim: int = 30, start: int = 0):
+def plot_image_reconstruction(
+    images: np.ndarray, num_cols: int = 3, slim: int = 30, start: int = 0
+):
     """Plots reconstructed images in a grid.
 
     Args:
@@ -106,3 +109,11 @@ def compute_outputdim_cv(I: int, F: int, P: int, S: int):
     """
     O = (I - F + 2 * P) // S + 1
     return O
+
+
+def show_trained_models():
+    return {fp.name: fp for fp in pmldiku.FP_MODELS.glob("*")}
+
+
+if __name__ == "__main__":
+    print(FP_MODELS)
