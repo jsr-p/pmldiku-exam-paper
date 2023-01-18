@@ -147,15 +147,53 @@ class CVAE(pl.LightningModule):
         return mu + eps * std
 
 
-def neg_elbo(recon_x, x, mu, logvar):
-    """Negative ELBO loss.
+class VAELoss:
+    """Class to construct loss function for VAE.
 
-    Reconstruction + KL divergence losses summed
-    over all elements and batch.
+    Note:
+        See slide 19
+        - https://sebastianraschka.com/pdf/lecture-notes/stat453ss21/L17_vae__slides.pdf
+        - https://ai.stackexchange.com/questions/27341/in-variational-autoencoders-why-do-people-use-mse-for-the-loss
     """
-    BCE = F.binary_cross_entropy(recon_x, x.view(-1, 784), reduction="sum")
-    KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
-    return BCE + KLD  # -ELBO
+    def __init__(self, logpx_loss: str):
+        self.logpx_loss = logpx_loss
+        self.set_loss_fn()
+
+    def set_loss_fn(self):
+        match self.logpx_loss:
+            case "mse":
+                self.logpx_loss_fn = self.mse_loss
+            case "bce":
+                self.logpx_loss_fn = self.bce_loss
+            case _:
+                raise ValueError("Only MSE and BCE losses defined for log p(x | z)")
+
+    def mse_loss(self, recon_x: torch.Tensor, x: torch.Tensor):
+        return F.mse_loss(recon_x, x, reduction="sum")
+
+    def bce_loss(self, recon_x: torch.Tensor, x: torch.Tensor):
+        return F.binary_cross_entropy(recon_x, x, reduction="sum")
+
+    def __call__(
+        self, recon_x: torch.Tensor, x: torch.Tensor, mu: torch.Tensor, logvar: torch.Tensor
+    ):
+        """Loss function for VAE.
+
+        For BCE loss it equals negative ELBO loss.
+        Reconstruction + KL divergence losses summed over all
+        elements and batch.
+
+        Args:
+            recon_x: tensor of dim (B, 784) of reconstructed image pixels.
+            x: tensor of dim (B, 1, 28, 28) of original image pixels.
+            mu: parametrized mean tensor
+            logvar: parametrized logvar tensor
+        Returns:
+            (float): loss
+        """
+        logpx_loss = self.logpx_loss_fn(recon_x, x.view(-1, 784))
+        KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+        return logpx_loss + KLD
 
 
 class VAE(Protocol):
@@ -173,9 +211,10 @@ class Encoder(Protocol):
 
 
 class LitVAE(pl.LightningModule):
-    def __init__(self, vae: VAE):
+    def __init__(self, vae: VAE, logpx_loss: str = "bce"):
         super().__init__()
         self.vae = vae
+        self.loss_fn = VAELoss(logpx_loss=logpx_loss)
 
     def training_step(self, batch, _):
         return self.inner_step(batch, step_name="train", prog_bar=True)
@@ -187,7 +226,7 @@ class LitVAE(pl.LightningModule):
         """Inner step of both train and validation steps"""
         x, _ = batch  # Don't use target labels
         recon_batch, mu, logvar = self.vae(x)
-        loss = neg_elbo(recon_batch, x, mu, logvar)
+        loss = self.loss_fn(recon_batch, x, mu, logvar)
         self.log(f"{step_name}_loss", loss, **kwargs)
         return loss
 
@@ -214,18 +253,19 @@ class VAELossCallback(pl.Callback):
 class VAEImageReconstructionCallback(pl.Callback):
     """PyTorch Lightning metric callback."""
 
-    def __init__(self, num_epochs: int, save: bool = False):
+    def __init__(self, save: bool = False):
         super().__init__()
-        self.samples = torch.zeros(size=(num_epochs, 64, 28, 28))
+        self._samples = []
         self.save = save
         self.epoch = 0
+        self.samples: torch.Tensor
 
     def on_train_epoch_end(self, _, pl_module):
         with torch.no_grad():
             pl_module.eval()
             sample = torch.randn(64, 2).to(pl_module.device)
             sample = pl_module.vae.decode(sample)
-            self.samples[self.epoch] = sample.view(64, 28, 28)
+            self._samples.append(sample.view(64, 28, 28))
             pl_module.train()
             if self.save:
                 save_image(
@@ -233,6 +273,9 @@ class VAEImageReconstructionCallback(pl.Callback):
                     "results/sample_" + str(self.epoch) + ".png",
                 )
         self.epoch += 1
+
+    def on_train_end(self, *_):
+        self.samples = torch.stack(self._samples)
 
 
 def encode_means(

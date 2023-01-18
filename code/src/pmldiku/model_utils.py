@@ -2,8 +2,9 @@ import math
 
 import matplotlib.pyplot as plt
 import numpy as np
-import numpy.typing as npt
 import torch
+
+import pmldiku
 
 
 def plot_img(img: np.ndarray):
@@ -18,19 +19,24 @@ def plot_loss(loss: np.ndarray, **kwargs):
     ax.set(title="Loss", xlabel="epoch", ylabel="loss", **kwargs)
 
 
-def plot_image_reconstruction(images: np.ndarray, num_cols: int = 3, slim: int = 30):
+def plot_image_reconstruction(
+    images: np.ndarray, num_cols: int = 3, slim: int = 30, start: int = 0
+):
     """Plots reconstructed images in a grid.
 
     Args:
         images: array of dim (N, X, Y) where N is number of imgs.
+        num_cols: number of columns in img.
+        slim: spacing between imgs.
+        start: epoch of the first image in grid
     """
     N = images.shape[0]
     num_rows = math.ceil(N / num_cols)
     fig, axes = plt.subplots(
         nrows=num_rows, ncols=num_cols, figsize=(4 * num_rows, 4 * num_cols)
     )
-    for i, ax in zip(range(N), axes.flatten()):  # type: ignore
-        ax.imshow(images[i], cmap="gray")
+    for i, ax in zip(range(start, N + start), axes.flatten()):  # type: ignore
+        ax.imshow(images[i - start], cmap="gray")
         ax.set(title=f"Reconstruction of img. at epoch {i + 1}")
         ax.axis("off")
     fig.tight_layout(w_pad=-slim)
@@ -103,3 +109,11 @@ def compute_outputdim_cv(I: int, F: int, P: int, S: int):
     """
     O = (I - F + 2 * P) // S + 1
     return O
+
+
+def show_trained_models():
+    return {fp.name: fp for fp in pmldiku.FP_MODELS.glob("*")}
+
+
+if __name__ == "__main__":
+    print(FP_MODELS)
