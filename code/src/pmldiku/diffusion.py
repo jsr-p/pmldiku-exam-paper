@@ -1,5 +1,6 @@
 from dataclasses import dataclass
-from typing import Protocol, TypeAlias
+from typing import Any, Protocol, TypeAlias
+import numpy as np
 
 import pytorch_lightning as pl
 import torch
@@ -34,13 +35,13 @@ class UNetBlock(nn.Module):
         padding=1,
         activation=None,
         normalize=True,
-    ):
+    ) -> None:
         super(UNetBlock, self).__init__()
-        self.ln = nn.LayerNorm(shape)
-        self.conv1 = nn.Conv2d(in_c, out_c, kernel_size, stride, padding)
-        self.conv2 = nn.Conv2d(out_c, out_c, kernel_size, stride, padding)
-        self.activation = nn.SiLU() if activation is None else activation
-        self.normalize = normalize
+        self.ln: nn.LayerNorm = nn.LayerNorm(shape)
+        self.conv1: nn.Conv2d = nn.Conv2d(in_c, out_c, kernel_size, stride, padding)
+        self.conv2: nn.Conv2d = nn.Conv2d(out_c, out_c, kernel_size, stride, padding)
+        self.activation: nn.Silu | Any = nn.SiLU() if activation is None else activation
+        self.normalize: bool = normalize
 
     def forward(self, x):
         out = self.ln(x) if self.normalize else x
@@ -61,7 +62,7 @@ class UNet(nn.Module):
         self.time_embed.requires_grad_(False)
 
         # First half
-        self.te1 = self._make_te(time_emb_dim, 1)
+        self.te1 = self._make_time_embedding(time_emb_dim, 1)
         self.b1 = nn.Sequential(
             UNetBlock((1, 28, 28), 1, 10),
             UNetBlock((10, 28, 28), 10, 10),
@@ -69,7 +70,7 @@ class UNet(nn.Module):
         )
         self.down1 = nn.Conv2d(10, 10, 4, 2, 1)
 
-        self.te2 = self._make_te(time_emb_dim, 10)
+        self.te2 = self._make_time_embedding(time_emb_dim, 10)
         self.b2 = nn.Sequential(
             UNetBlock((10, 14, 14), 10, 20),
             UNetBlock((20, 14, 14), 20, 20),
@@ -77,7 +78,7 @@ class UNet(nn.Module):
         )
         self.down2 = nn.Conv2d(20, 20, 4, 2, 1)
 
-        self.te3 = self._make_te(time_emb_dim, 20)
+        self.te3 = self._make_time_embedding(time_emb_dim, 20)
         self.b3 = nn.Sequential(
             UNetBlock((20, 7, 7), 20, 40),
             UNetBlock((40, 7, 7), 40, 40),
@@ -88,7 +89,7 @@ class UNet(nn.Module):
         )
 
         # Bottleneck
-        self.te_mid = self._make_te(time_emb_dim, 40)
+        self.te_mid = self._make_time_embedding(time_emb_dim, 40)
         self.b_mid = nn.Sequential(
             UNetBlock((40, 3, 3), 40, 20),
             UNetBlock((20, 3, 3), 20, 20),
@@ -102,7 +103,7 @@ class UNet(nn.Module):
             nn.ConvTranspose2d(40, 40, 2, 1),
         )
 
-        self.te4 = self._make_te(time_emb_dim, 80)
+        self.te4 = self._make_time_embedding(time_emb_dim, 80)
         self.b4 = nn.Sequential(
             UNetBlock((80, 7, 7), 80, 40),
             UNetBlock((40, 7, 7), 40, 20),
@@ -110,7 +111,7 @@ class UNet(nn.Module):
         )
 
         self.up2 = nn.ConvTranspose2d(20, 20, 4, 2, 1)
-        self.te5 = self._make_te(time_emb_dim, 40)
+        self.te5 = self._make_time_embedding(time_emb_dim, 40)
         self.b5 = nn.Sequential(
             UNetBlock((40, 14, 14), 40, 20),
             UNetBlock((20, 14, 14), 20, 10),
@@ -118,7 +119,7 @@ class UNet(nn.Module):
         )
 
         self.up3 = nn.ConvTranspose2d(10, 10, 4, 2, 1)
-        self.te_out = self._make_te(time_emb_dim, 20)
+        self.te_out = self._make_time_embedding(time_emb_dim, 20)
         self.b_out = nn.Sequential(
             UNetBlock((20, 28, 28), 20, 10),
             UNetBlock((10, 28, 28), 10, 10),
@@ -156,10 +157,109 @@ class UNet(nn.Module):
 
         return out
 
-    def _make_te(self, dim_in, dim_out):
+    def _make_time_embedding(self, dim_in, dim_out):
         return nn.Sequential(
             nn.Linear(dim_in, dim_out), nn.SiLU(), nn.Linear(dim_out, dim_out)
         )
+
+
+# Smaller CONV Network
+
+class ConvNet(nn.Module):
+    def __init__(self, n_steps: int=1000, time_emb_dim: int=100) -> None:
+        super(ConvNet, self).__init__()
+
+        self.n_steps: int = n_steps
+        self.time_emb_dim = time_emb_dim
+
+        self.init_sinusoidal_embed()
+        self.init_network()
+
+    def forward(self, x, t) -> torch.Tensor:
+        t = self.time_embed(t)
+        n = len(x)
+
+        out = self.c_layer_1(x + self.te_1(t).reshape(n, -1, 1, 1))
+        out = self.activation(out)
+        #out = self.transform_1(out)
+
+        out = self.c_layer_2(out + self.te_2(t).reshape(n, -1, 1, 1))
+        out = self.activation(out)
+        #out = self.transform_2_1(out)
+        #out = self.activation(out)
+        #out = self.transform_2_2(out)
+
+        out = self.c_layer_3(out + self.te_3(t).reshape(n, -1, 1, 1))
+        #out = self.activation(out)
+        #out = self.transform_3(out)
+
+        
+        out = self.c_layer_4(out + self.te_4(t).reshape(n, -1, 1, 1))
+        #out = self.activation(out)
+        out = self.out_layer(out)
+
+        return out
+
+    def init_sinusoidal_embed(self) -> None:
+        self.time_embed: nn.Embedding = nn.Embedding(self.n_steps, self.time_emb_dim)
+        self.time_embed.weight.data = sinusoidal_embedding(self.n_steps, self.time_emb_dim)
+        self.time_embed.requires_grad_(False)
+    
+    def _make_time_embedding(self, dim_in, dim_out) -> nn.Sequential:
+        return nn.Sequential(
+            nn.Linear(dim_in, dim_out), nn.SiLU(), nn.Linear(dim_out, dim_out)
+        )
+
+    def _make_linear_normalize(self, shape) -> nn.Sequential:
+        return nn.Sequential(
+            nn.LayerNorm(shape), nn.Linear(shape[-1], shape[-1])
+        )
+
+    def init_network(self) -> None:
+
+        self.activation = nn.ReLU()
+
+        self.te_1 = self._make_time_embedding(self.time_emb_dim, 1)
+        self.c_layer_1: nn.Conv2d = nn.Conv2d(
+                in_channels=1,
+                out_channels=32,
+                stride=(2, 2),
+                kernel_size=(3, 3),
+                padding=1,
+            )
+        self.transform_1 = self._make_linear_normalize((32, 14, 14))
+
+        self.te_2: nn.Sequential = self._make_time_embedding(self.time_emb_dim, 32)
+        self.c_layer_2: nn.Conv2d = nn.Conv2d(
+                in_channels=32,
+                out_channels=64,
+                stride=(2, 2),
+                kernel_size=(3, 3),
+                padding=1,
+            )
+        self.transform_2_1: nn.Sequential = self._make_linear_normalize((64, 7, 7))
+        self.transform_2_2: nn.Sequential = self._make_linear_normalize((64, 7, 7))
+
+        self.te_3: nn.Sequential = self._make_time_embedding(self.time_emb_dim, 64)
+        self.c_layer_3: nn.ConvTranspose2d = nn.ConvTranspose2d(
+                in_channels=64,
+                out_channels=32,
+                stride=(2, 2),
+                kernel_size=(5, 5),
+                padding=1,
+            )
+        self.transform_3: nn.Sequential = self._make_linear_normalize((32, 15, 15))
+
+        self.te_4: nn.Sequential = self._make_time_embedding(self.time_emb_dim, 32)
+        self.c_layer_4: nn.ConvTranspose2d = nn.ConvTranspose2d(
+                in_channels=32,
+                out_channels=1,
+                stride=(2, 2),
+                kernel_size=(2, 2),
+                padding=1,
+            )
+            
+        self.out_layer = nn.Conv2d(1, 1, 3, 1, 1)
 
 
 # ---------------------  Model  --------------------- #
@@ -256,25 +356,30 @@ class LightningDiffusion(pl.LightningModule):
         x0, _ = batch
         n = len(x0)
 
-        # Picking some noise for each of the images in the batch, a timestep and the respective alpha_bars
+        # Picking some noise and alpha_bars
         eta = torch.randn_like(x0).to(self.device)
         t = torch.randint(0, self.diffusion_params.n_steps, (n,)).to(self.device)
 
-        # Computing the noisy image based on x0 and the time-step (forward process)
+        # noisy img(forward process)
         noisy_imgs = self.diffusion(x0, t, eta)
 
-        # Getting model estimation of noise based on the images and the time-step
         eta_theta = self.diffusion.backward(noisy_imgs, t.reshape(n, -1))
 
-        # Optimizing the MSE between the noise plugged and the predicted noise
+        # MSE between noise and True
         mse = self.diffusion.loss(eta_theta, eta)
 
         if self.verbose:
-            print(f"{step_name}_loss {mse}")
+            #print(f"{step_name}_loss {mse}")
             self.log(f"{step_name}_loss {mse}", mse, prog_bar=True)
         else:
             self.log(f"{step_name}_loss {mse}", mse)
         return mse
+
+    def training_epoch_end(self, training_step_outputs) -> None:
+        if self.verbose:
+            last_outputs = training_step_outputs[-50: -1]
+            res = np.mean([d['loss'].cpu().numpy() for d in last_outputs])
+            print(f"New Epoch. Loss: {res}")
 
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), lr=self.learning_rate)
@@ -283,7 +388,7 @@ class LightningDiffusion(pl.LightningModule):
     def generate(self, n_samples):
 
         c, h, w = 1, 28, 28
-
+        print('lars')
         with torch.no_grad():
             x = torch.randn(n_samples, c, h, w).to(self.device)
 
