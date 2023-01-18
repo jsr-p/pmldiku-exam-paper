@@ -2,6 +2,9 @@
 # PML Exam 2023
 
 - [Code](code/)
+  - [Notebooks](code/notebooks/)
+    - [A](code/notebooks/A)
+    - [B](code/notebooks/B)
 - [Overleaf link to paper](https://www.overleaf.com/1413687226krxbtspykqzj)
 - [Project description](code/PML2022_project_final.pdf)
 
