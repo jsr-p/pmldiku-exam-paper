@@ -8,7 +8,7 @@ __pycache__/
 
 models/
 
-
+*/ligtning_logs/
 # C extensions
 *.so
 
