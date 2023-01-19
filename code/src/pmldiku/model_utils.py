@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+from pathlib import Path
 import math
 
 import matplotlib.pyplot as plt
@@ -111,9 +113,30 @@ def compute_outputdim_cv(I: int, F: int, P: int, S: int):
     return O
 
 
-def show_trained_models():
-    return {fp.name: fp for fp in pmldiku.FP_MODELS.glob("*")}
+def filesize(fp: Path):
+    size_mb = fp.stat().st_size / 10 ** 6
+    return size_mb
+
+
+@dataclass
+class TrainedModels:
+    models: dict[str, Path]
+
+    def __post_init__(self):
+        self.models_size = {fp.name: filesize(fp) for fp in self.models.values()}
+
+    def print_overview(self):
+        for model in self.models:
+            model_size = self.models_size[model]
+            print(f"Model {model}; size {model_size:.2f} mb.")
+
+
+def show_trained_models() -> TrainedModels:
+    models = {fp.name: fp for fp in pmldiku.FP_MODELS.glob("*")}
+    trained_models = TrainedModels(models=models)
+    trained_models.print_overview()
+    return trained_models
 
 
 if __name__ == "__main__":
-    print(FP_MODELS)
+    print(pmldiku.FP_MODELS)
