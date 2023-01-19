@@ -1,6 +1,5 @@
 """Module to implement different VAE architectures."""
 
-from dataclasses import dataclass
 from collections import OrderedDict
 from typing import Protocol, TypeAlias
 
@@ -145,6 +144,10 @@ class BayesVAE(pl.LightningModule):
         self._init_encoder()
         self._init_decoder()
         self._init_posterior_theta()
+        # pytorch_lightning won't capture the params if we
+        # intialize them inside `_init_posterior_theta`
+        self.mu_theta = nn.Parameter(torch.empty(self.total_params_theta))
+        self.logvar_theta = nn.Parameter(torch.empty(self.total_params_theta))
 
     def _init_encoder(self):
         self.fc1 = nn.Linear(784, 400)
@@ -153,19 +156,16 @@ class BayesVAE(pl.LightningModule):
         self.fc22 = nn.Linear(100, self.hidden_dim)
 
     def _init_decoder(self):
-        self.decoder = OrderedDict()
-        self.decoder["fc3"] = BayesVAELinearParams(in_features=self.hidden_dim, out_features=100)
-        self.decoder["fc3a"] = BayesVAELinearParams(in_features=100, out_features=400)
+        self.decoder: dict[str, BayesVAELinearParams] = OrderedDict()
+        self.decoder["fc3"] = BayesVAELinearParams(in_features=self.hidden_dim, out_features=400)
         self.decoder["fc4"] = BayesVAELinearParams(in_features=400, out_features=784)
 
     def _init_posterior_theta(self):
         """Initializes the parameters for variational posterior for theta."""
-        self.total_params_theta = [layer.total_params_theta() for _, layer in self.decoder.items()]
-        self.mu_theta = nn.Parameter(torch.empty(self.total_params_theta))
-        self.logsigmasq_theta = nn.Parameter(torch.empty(self.total_params_theta))
+        self.total_params_theta = sum([layer.total_params() for _, layer in self.decoder.items()])
 
     def draw_posterior_theta(self) -> torch.Tensor:
-        theta = self.reparameterize(self.mu_theta, self.logsigmasq_theta)
+        theta = self.reparameterize(self.mu_theta, self.logvar_theta)
         return theta
 
     def forward(self, x: torch.Tensor) -> VAEOutput:
@@ -180,6 +180,12 @@ class BayesVAE(pl.LightningModule):
         """
         z, mu, logvar = self.sample(x.view(-1, 784))
         return self.decode(z), mu, logvar
+
+    def update_decoder_params(self, theta: torch.Tensor):
+        next_param_idx = 0
+        for layer in self.decoder.values():
+            next_param_idx = layer.unpack(next_param_idx, theta)
+        assert next_param_idx == self.total_params_theta
 
     def sample(self, x: torch.Tensor):
         """Samples from the encoder distribution.
@@ -223,9 +229,10 @@ class BayesVAE(pl.LightningModule):
         Returns:
             (B, 784) tensor of decoded images.
         """
-        h3 = F.relu(self.fc3(z))
-        h4 = F.relu(self.fc3a(h3))
-        return torch.sigmoid(self.fc4(h4))
+        theta = self.draw_posterior_theta()
+        self.update_decoder_params(theta)
+        h3 = F.relu(self.decoder["fc3"](z))
+        return torch.sigmoid(self.decoder["fc4"](h3))
 
 
 class CVAE(pl.LightningModule):
@@ -340,13 +347,7 @@ class CVAE(pl.LightningModule):
 
 
 class VAELoss:
-    """Class to construct loss function for VAE.
-
-    Note:
-        See slide 19
-        - https://sebastianraschka.com/pdf/lecture-notes/stat453ss21/L17_vae__slides.pdf
-        - https://ai.stackexchange.com/questions/27341/in-variational-autoencoders-why-do-people-use-mse-for-the-loss
-    """
+    """Class to construct loss function for VAE."""
 
     def __init__(self, logpx_loss: str):
         self.logpx_loss = logpx_loss
@@ -381,7 +382,7 @@ class VAELoss:
     def bce_loss(self, recon_x: torch.Tensor, x: torch.Tensor, reduction: str = "sum"):
         return F.binary_cross_entropy(recon_x, x, reduction=reduction)
 
-    def __call__(
+    def standard_loss(
         self,
         recon_x: torch.Tensor,
         x: torch.Tensor,
@@ -405,6 +406,34 @@ class VAELoss:
         logpx_loss = self.logpx_loss_fn(recon_x, x.view(-1, 784))
         KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
         return logpx_loss + KLD
+
+    def bayesian_loss(
+        self,
+        recon_x: torch.Tensor,
+        x: torch.Tensor,
+        mu_encoder: torch.Tensor,
+        logvar_encoder: torch.Tensor,
+        mu_theta: torch.Tensor,
+        logvar_theta: torch.Tensor,
+    ):
+        """Loss function for Bayesian VAE.
+
+        Depending on the assumption of p(x | z) the second
+        term of the loss function is either a BCE or MSE.
+
+        Args:
+            recon_x: tensor of dim (B, 784) of reconstructed image pixels.
+            x: tensor of dim (B, 1, 28, 28) of original image pixels.
+            mu: parametrized mean tensor
+            logvar: parametrized logvar tensor
+
+        Returns:
+            (float): loss
+        """
+        logpx_loss = self.logpx_loss_fn(recon_x, x.view(-1, 784))
+        KLD_encoder = -0.5 * torch.sum(1 + logvar_encoder - mu_encoder.pow(2) - logvar_encoder.exp())
+        KLD_theta = -0.5 * torch.sum(1 + logvar_theta - mu_theta.pow(2) - logvar_theta.exp())
+        return logpx_loss + KLD_encoder + KLD_theta
 
 
 class VAE(Protocol):
@@ -431,7 +460,7 @@ class LitVAE(pl.LightningModule):
     def __init__(self, vae: VAE, logpx_loss: str = "bce"):
         super().__init__()
         self.vae = vae
-        self.loss_fn = VAELoss(logpx_loss=logpx_loss)
+        self.loss_fn = VAELoss(logpx_loss=logpx_loss).standard_loss
 
     def training_step(self, batch, _):
         return self.inner_step(batch, step_name="train", prog_bar=True)
@@ -444,6 +473,38 @@ class LitVAE(pl.LightningModule):
         x, _ = batch  # Don't use target labels
         recon_batch, mu, logvar = self.vae(x)
         loss = self.loss_fn(recon_batch, x, mu, logvar)
+        self.log(f"{step_name}_loss", loss, **kwargs)
+        return loss
+
+    def configure_optimizers(self):
+        optimizer = optim.Adam(self.parameters(), lr=1e-3)
+        return optimizer
+
+
+class LitBayesVAE(pl.LightningModule):
+    def __init__(self, vae: BayesVAE, logpx_loss: str = "bce"):
+        super().__init__()
+        self.vae = vae
+        self.loss_fn = VAELoss(logpx_loss=logpx_loss).bayesian_loss
+
+    def training_step(self, batch, _):
+        return self.inner_step(batch, step_name="train", prog_bar=True)
+
+    def validation_step(self, batch, _):
+        return self.inner_step(batch, step_name="val")
+
+    def inner_step(self, batch, step_name: str, **kwargs):
+        """Inner step of both train and validation steps"""
+        x, _ = batch  # Don't use target labels
+        recon_batch, mu_encoder, logvar_encoder = self.vae(x)
+        loss = self.loss_fn(
+            recon_x=recon_batch,
+            x=x,
+            mu_encoder=mu_encoder,
+            logvar_encoder=logvar_encoder,
+            mu_theta=self.vae.mu_theta,
+            logvar_theta=self.vae.logvar_theta
+        )
         self.log(f"{step_name}_loss", loss, **kwargs)
         return loss
 
@@ -480,7 +541,7 @@ class VAEImageReconstructionCallback(pl.Callback):
     def on_train_epoch_end(self, _, pl_module):
         with torch.no_grad():
             pl_module.eval()
-            sample = torch.randn(64, 2).to(pl_module.device)
+            sample = torch.randn(64, pl_module.vae.hidden_dim).to(pl_module.device)
             sample = pl_module.vae.decode(sample)
             self._samples.append(sample.view(64, 28, 28))
             pl_module.train()
