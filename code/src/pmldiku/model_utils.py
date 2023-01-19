@@ -22,7 +22,7 @@ def plot_loss(loss: np.ndarray, **kwargs):
 
 
 def plot_image_reconstruction(
-    images: np.ndarray, num_cols: int = 3, slim: int = 30, start: int = 0
+    images: np.ndarray, num_cols: int = 3, slim: int = 30, start: int = 0, multi_title=True, **kwargs
 ):
     """Plots reconstructed images in a grid.
 
@@ -37,11 +37,18 @@ def plot_image_reconstruction(
     fig, axes = plt.subplots(
         nrows=num_rows, ncols=num_cols, figsize=(4 * num_rows, 4 * num_cols)
     )
+    
     for i, ax in zip(range(start, N + start), axes.flatten()):  # type: ignore
+        
         ax.imshow(images[i - start], cmap="gray")
-        ax.set(title=f"Reconstruction of img. at epoch {i + 1}")
+        if multi_title:
+            ax.set(title=f"{kwargs['title']} {i + 1}")
+        else:
+            if i == 0:
+                ax.set(title=f"{kwargs['title']}")
         ax.axis("off")
     fig.tight_layout(w_pad=-slim)
+    return fig
 
 
 def plot_encoded(X: np.ndarray, labels: np.ndarray, **kwargs):
@@ -137,6 +144,19 @@ def show_trained_models() -> TrainedModels:
     trained_models.print_overview()
     return trained_models
 
+def save_image_tensor(images: torch.Tensor, path: Path, fname:str, strict: bool=True, ) -> None:
+    """Saves images
+    images: Tensor with images
+    strict: ensures tensor is of shape (10000, 1, 28, 28
+    """
+    if strict:
+        assert images.shape == (10000, 1, 28, 28)
+    torch.save(images, path / Path(fname))
+
+def load_image_tensor(path: Path, fname: str) -> torch.Tensor:
+    return torch.load(path / Path(fname))
+
 
 if __name__ == "__main__":
     print(pmldiku.FP_MODELS)
+
