@@ -179,7 +179,17 @@ class CVAE(pl.LightningModule):
     def forward(self, X: torch.Tensor):
         mu, logvar = self.encode(X)
         Z = self.reparameterize(mu, logvar)
-        return self.decode(Z).view(-1, 784), mu, logvar
+        return self.decode(Z), mu, logvar
+
+    def sample(self, x: torch.Tensor):
+        """Samples from the encoder distribution.
+
+        Returns:
+            sample, encoder mean, encoder log(variance)
+        """
+        mu, logvar = self.encode(x)
+        z = self.reparameterize(mu, logvar)
+        return z, mu, logvar
 
     def encode(self, X: torch.Tensor) -> EncoderOutput:
         X = self.encoder(X)
@@ -187,7 +197,7 @@ class CVAE(pl.LightningModule):
         return mu, logvar
 
     def decode(self, Z: torch.Tensor):
-        return self.decoder(Z)
+        return self.decoder(Z).view(-1, 784)
 
     def reparameterize(self, mu: torch.Tensor, logvar: torch.Tensor):
         std = torch.exp(0.5 * logvar)
