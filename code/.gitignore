@@ -8,7 +8,7 @@ __pycache__/
 
 models/
 
-*/lightning_logs/
+*lightning_logs/
 # C extensions
 *.so
 
@@ -33,3 +33,5 @@ share/python-wheels/
 MANIFEST
 
 *.DS_Store
+
+*raw/
