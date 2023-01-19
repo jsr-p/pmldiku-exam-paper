@@ -111,8 +111,8 @@ class BayesVAELinearParams:
         num_bias_params = self.num_bias_params()
         weights_idx = start_idx + num_weight_params
         bias_idx = weights_idx + num_bias_params
-        weights = theta[start_idx: weights_idx]
-        bias = theta[weights_idx: bias_idx]
+        weights = theta[start_idx:weights_idx]
+        bias = theta[weights_idx:bias_idx]
         self.update_params(weights, bias)
         return bias_idx
 
@@ -146,8 +146,8 @@ class BayesVAE(pl.LightningModule):
         self._init_posterior_theta()
         # pytorch_lightning won't capture the params if we
         # intialize them inside `_init_posterior_theta`
-        self.mu_theta = nn.Parameter(torch.empty(self.total_params_theta))
-        self.logvar_theta = nn.Parameter(torch.empty(self.total_params_theta))
+        self.mu_theta = nn.Parameter(torch.randn(self.total_params_theta))
+        self.logvar_theta = nn.Parameter(torch.randn(self.total_params_theta))
 
     def _init_encoder(self):
         self.fc1 = nn.Linear(784, 400)
@@ -157,12 +157,16 @@ class BayesVAE(pl.LightningModule):
 
     def _init_decoder(self):
         self.decoder: dict[str, BayesVAELinearParams] = OrderedDict()
-        self.decoder["fc3"] = BayesVAELinearParams(in_features=self.hidden_dim, out_features=400)
+        self.decoder["fc3"] = BayesVAELinearParams(
+            in_features=self.hidden_dim, out_features=400
+        )
         self.decoder["fc4"] = BayesVAELinearParams(in_features=400, out_features=784)
 
     def _init_posterior_theta(self):
         """Initializes the parameters for variational posterior for theta."""
-        self.total_params_theta = sum([layer.total_params() for _, layer in self.decoder.items()])
+        self.total_params_theta = sum(
+            [layer.total_params() for _, layer in self.decoder.items()]
+        )
 
     def draw_posterior_theta(self) -> torch.Tensor:
         theta = self.reparameterize(self.mu_theta, self.logvar_theta)
@@ -431,8 +435,12 @@ class VAELoss:
             (float): loss
         """
         logpx_loss = self.logpx_loss_fn(recon_x, x.view(-1, 784))
-        KLD_encoder = -0.5 * torch.sum(1 + logvar_encoder - mu_encoder.pow(2) - logvar_encoder.exp())
-        KLD_theta = -0.5 * torch.sum(1 + logvar_theta - mu_theta.pow(2) - logvar_theta.exp())
+        KLD_encoder = -0.5 * torch.sum(
+            1 + logvar_encoder - mu_encoder.pow(2) - logvar_encoder.exp()
+        )
+        KLD_theta = -0.5 * torch.sum(
+            1 + logvar_theta - mu_theta.pow(2) - logvar_theta.exp()
+        )
         return logpx_loss + KLD_encoder + KLD_theta
 
 
@@ -503,7 +511,7 @@ class LitBayesVAE(pl.LightningModule):
             mu_encoder=mu_encoder,
             logvar_encoder=logvar_encoder,
             mu_theta=self.vae.mu_theta,
-            logvar_theta=self.vae.logvar_theta
+            logvar_theta=self.vae.logvar_theta,
         )
         self.log(f"{step_name}_loss", loss, **kwargs)
         return loss
@@ -617,7 +625,7 @@ class MarginalLogLikVAE:
         for X_b, _ in tqdm.tqdm(self.val_loader):
             logpx_batch = self.estimate_batch(X_b)
             b_shape = X_b.shape[0]
-            self.logpx_all[counter: counter + b_shape] = logpx_batch
+            self.logpx_all[counter : counter + b_shape] = logpx_batch
             counter += b_shape
         logpx = -np.log(self.N_val) + torch.logsumexp(self.logpx_all, dim=0)
         return logpx
