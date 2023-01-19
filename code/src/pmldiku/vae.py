@@ -1,5 +1,7 @@
 """Module to implement different VAE architectures."""
 
+from dataclasses import dataclass
+from collections import OrderedDict
 from typing import Protocol, TypeAlias
 
 import numpy as np
@@ -33,6 +35,138 @@ class BaseVAE(pl.LightningModule):
         self.fc3 = nn.Linear(self.hidden_dim, 100)
         self.fc3a = nn.Linear(100, 400)
         self.fc4 = nn.Linear(400, 784)
+
+    def forward(self, x: torch.Tensor) -> VAEOutput:
+        """Forward pass of the VAE.
+
+        Args:
+            x: Image tensor of dim. (B, W, H)
+
+        Returns:
+            (VAEOutput):
+                decoded image, encoder mean, encoder log(variance).
+        """
+        z, mu, logvar = self.sample(x.view(-1, 784))
+        return self.decode(z), mu, logvar
+
+    def sample(self, x: torch.Tensor):
+        """Samples from the encoder distribution.
+
+        Returns:
+            sample, encoder mean, encoder log(variance)
+        """
+        mu, logvar = self.encode(x)
+        z = self.reparameterize(mu, logvar)
+        return z, mu, logvar
+
+    def encode(self, x: torch.Tensor) -> EncoderOutput:
+        """Encodes the input image tensor.
+
+        The image is encoded into the mean and variance
+        of the encoder distribution q(z | x).
+
+        Args:
+            x: (B, 784) dimensional image tensor
+
+        Returns:
+            (EncoderOutput):
+                Mean and variance of encoder distribution.
+                Both are of dimension (B, self.hidden_dim)
+        """
+        h1 = F.relu(self.fc1(x.view(-1, 784)))
+        h2 = F.relu(self.fc1a(h1))
+        return self.fc21(h2), self.fc22(h2)
+
+    def reparameterize(self, mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
+        """Draws z ~ q(z | x) using the reparameterization trick."""
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return mu + eps * std
+
+    def decode(self, z: torch.Tensor) -> torch.Tensor:
+        """Decodes sample from the latent distribution.
+
+        The sample from the latent distribution is decoded
+        into an image tensor.
+
+        Returns:
+            (B, 784) tensor of decoded images.
+        """
+        h3 = F.relu(self.fc3(z))
+        h4 = F.relu(self.fc3a(h3))
+        return torch.sigmoid(self.fc4(h4))
+
+
+class BayesVAELinearParams:
+    def __init__(self, in_features: int, out_features: int):
+        self.in_features = in_features
+        self.out_features = out_features
+        self.weights = torch.empty(self.in_features, self.out_features)
+        self.bias = torch.empty(self.out_features)
+
+    def __call__(self, input: torch.Tensor):
+        return F.linear(input, weight=self.weights, bias=self.bias)
+
+    def unpack(self, start_idx: int, theta: torch.Tensor) -> int:
+        num_weight_params = self.num_weight_params()
+        num_bias_params = self.num_bias_params()
+        weights_idx = start_idx + num_weight_params
+        bias_idx = weights_idx + num_bias_params
+        weights = theta[start_idx: weights_idx]
+        bias = theta[weights_idx: bias_idx]
+        self.update_params(weights, bias)
+        return bias_idx
+
+    def update_params(self, weights: torch.Tensor, bias: torch.Tensor):
+        """Updates the parameters with the slice from the drawn theta.
+
+        Note:
+            F.linear computes the linear transformation as
+                y = x A^T + b
+            thus we set the parameters as below.
+        """
+        self.weights = weights.view((self.out_features, self.in_features))
+        self.bias = bias
+
+    def total_params(self):
+        return self.num_weight_params() + self.num_bias_params()
+
+    def num_weight_params(self):
+        return self.in_features * self.out_features
+
+    def num_bias_params(self):
+        return self.out_features
+
+
+class BayesVAE(pl.LightningModule):
+    def __init__(self, hidden_dim: int = 2):
+        super(BayesVAE, self).__init__()
+        self.hidden_dim = hidden_dim
+        self._init_encoder()
+        self._init_decoder()
+        self._init_posterior_theta()
+
+    def _init_encoder(self):
+        self.fc1 = nn.Linear(784, 400)
+        self.fc1a = nn.Linear(400, 100)
+        self.fc21 = nn.Linear(100, self.hidden_dim)
+        self.fc22 = nn.Linear(100, self.hidden_dim)
+
+    def _init_decoder(self):
+        self.decoder = OrderedDict()
+        self.decoder["fc3"] = BayesVAELinearParams(in_features=self.hidden_dim, out_features=100)
+        self.decoder["fc3a"] = BayesVAELinearParams(in_features=100, out_features=400)
+        self.decoder["fc4"] = BayesVAELinearParams(in_features=400, out_features=784)
+
+    def _init_posterior_theta(self):
+        """Initializes the parameters for variational posterior for theta."""
+        self.total_params_theta = [layer.total_params_theta() for _, layer in self.decoder.items()]
+        self.mu_theta = nn.Parameter(torch.empty(self.total_params_theta))
+        self.logsigmasq_theta = nn.Parameter(torch.empty(self.total_params_theta))
+
+    def draw_posterior_theta(self) -> torch.Tensor:
+        theta = self.reparameterize(self.mu_theta, self.logsigmasq_theta)
+        return theta
 
     def forward(self, x: torch.Tensor) -> VAEOutput:
         """Forward pass of the VAE.
