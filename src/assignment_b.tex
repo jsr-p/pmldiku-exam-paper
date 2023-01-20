@@ -1,9 +1,6 @@
 \section*{B – Function fitting}
 
 \subsection*{B.1 – Fitting a GP with Pyro}
-\begin{itemize}
-    \item Skal vi alternativt have én chain med 500 samples for final MCMC samples, og så bare bruge 4 chains til MCMC diagnostics? Lige nu bruger vi også 4 MCMC chains for final sample.
-\end{itemize}
 We are considering a hierarchical model in which we want to compute the predictive posterior distribution, $p(f^*|x^*,\mathcal{D})$. By \autoref{appendix1} we can approximate the posterior predictive by computing MCMC samples from the posterior, $p(\bm{\theta}|\mathcal{D})$, and thereafter averaging over $p(f^*|x^*,\mathcal{D},\bm{\theta}^{(i)})$:
 \begin{equation}
     p(f^*|x^*,\mathcal{D})\approx N^{-1}\sum_{i=1}^Np(f^*|x^*,\mathcal{D},\bm{\theta}^{(i)})
