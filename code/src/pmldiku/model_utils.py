@@ -83,10 +83,11 @@ def plot_encoded(X: np.ndarray, labels: np.ndarray, **kwargs):
         kwargs = {"title": "Encoded images"}
     ax.set(**kwargs)
     fig.tight_layout()
-    plt.show()
+    return fig
 
 
 def construct_gauss_grid(M: int):
+    """Returns a (M * M, 2) tensor of gauss grid values."""
     x = torch.linspace(start=0, end=1, steps=M + 2)
     x = x[1:-1]
     mesh_x, mesh_y = torch.meshgrid(x, x, indexing="ij")
@@ -107,7 +108,7 @@ def plot_gauss_grid_imgs(decoded_imgs: np.ndarray):
         ax.axis("off")
     slim = 0.6
     fig.tight_layout(pad=-slim, w_pad=-slim, h_pad=-slim)
-    plt.show()
+    return fig
 
 
 def compute_outputdim_cv(I: int, F: int, P: int, S: int):

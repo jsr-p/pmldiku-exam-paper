@@ -4,6 +4,7 @@ import torch
 import torch.utils.data
 from torch import nn, optim
 from torch.nn import functional as F
+from scipy.linalg import sqrtm
 
 from torchvision import datasets, transforms
 from torchvision.transforms import Compose, ToTensor, Lambda
@@ -13,14 +14,20 @@ import pytorch_lightning as pl
 import matplotlib.pyplot as plt
 import numpy as np
 
-from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, TQDMProgressBar, LearningRateMonitor
+from pytorch_lightning.callbacks import (
+    ModelCheckpoint,
+    EarlyStopping,
+    TQDMProgressBar,
+    LearningRateMonitor,
+)
 
 import pmldiku
 from pmldiku import data, model_utils, output_utils, fid
 
 # Frechet Inception Distance
 
-class FID():
+
+class FID:
     def __init__(self, classifier) -> None:
         self.classifier = classifier
 
@@ -29,23 +36,39 @@ class FID():
         embeddings = self.classifier.model.embed(images).detach()
         return embeddings
 
-    def calculate_fid(self, real: torch.Tensor, generated: torch.Tensor) -> tuple[float, dict[str, torch.Tensor]]:
+    def calculate_fid(
+        self, real: torch.Tensor, generated: torch.Tensor
+    ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         """real: real images, generated: generated images"""
         embed_real = self.embed(real)
         embed_gen = self.embed(generated)
 
-        mu_real, mu_gen = embed_real.mean(0), embed_gen.mean(0) 
+        mu_real, mu_gen = embed_real.mean(0), embed_gen.mean(0)
         cov_real, cov_gen = embed_real.T.cov(), embed_gen.T.cov()
 
         score = self.fid_score(mu_real, mu_gen, cov_real, cov_gen)
-        return score, {'mu_real': mu_real, 'mu_gen': mu_gen, 'cov_real': cov_real, 'cov_gen': cov_gen}
+        return score, {
+            "mu_real": mu_real,
+            "mu_gen": mu_gen,
+            "cov_real": cov_real,
+            "cov_gen": cov_gen,
+        }
 
     @staticmethod
-    def fid_score(mu_real, mu_gen, cov_real, cov_gen, n=None) -> float:     
-        return torch.linalg.vector_norm(mu_real - mu_gen)**2 + (cov_real + cov_gen - 2*(cov_real @ cov_gen)**(1/2)).trace() 
+    def fid_score(mu_real, mu_gen, cov_real, cov_gen, n=None) -> torch.Tensor:
+        cov_real, cov_gen = cov_real.detach().numpy(), cov_gen.detach().numpy()
+        mean_term = torch.linalg.vector_norm(mu_real - mu_gen) ** 2
+        mean_term = mean_term.detach().numpy()
+        tr_term = np.trace(
+            cov_real
+            + cov_gen
+            - 2 * sqrtm(cov_real @ cov_gen)
+        )
+        return mean_term + tr_term
 
 
 # classifier
+
 
 class Net(nn.Module):
     def __init__(self):
@@ -79,6 +102,7 @@ class Net(nn.Module):
         x = self.fc2(x)
         return x
 
+
 # callbacks
 class ClassifierLossCallback(pl.Callback):
     """PyTorch Lightning metric callback."""
@@ -86,10 +110,11 @@ class ClassifierLossCallback(pl.Callback):
     def __init__(self) -> None:
         super().__init__()
         self.train_loss: list = []
-        self.val_loss: list  = []
-        
+        self.val_loss: list = []
+
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx) -> None:
-        self.train_loss.append(trainer.callback_metrics['train_mse'].item())
+        self.train_loss.append(trainer.callback_metrics["train_mse"].item())
+
 
 class MNISTClassifier(pl.LightningModule):
     def __init__(self) -> None:
@@ -98,15 +123,15 @@ class MNISTClassifier(pl.LightningModule):
         # init a pretrained resnet
         self.model = Net()
         self.verbose = True
-        
+
     def training_step(self, batch, _):
         loss = self.inner_step(batch, step_name="train")
-        self.log(f"train_mse", loss)        
+        self.log(f"train_mse", loss)
         return loss
 
     def validation_step(self, batch, _):
         loss = self.inner_step(batch, step_name="val")
-        self.log(f"val_mse", loss)        
+        self.log(f"val_mse", loss)
         return loss
 
     def inner_step(self, batch, step_name, **kwargs):
@@ -121,14 +146,15 @@ class MNISTClassifier(pl.LightningModule):
 
     def training_epoch_end(self, training_step_outputs) -> None:
         if self.verbose:
-            last_outputs = training_step_outputs[-50: -1]
-            res = np.mean([d['loss'].cpu().numpy() for d in last_outputs])
+            last_outputs = training_step_outputs[-50:-1]
+            res = np.mean([d["loss"].cpu().numpy() for d in last_outputs])
             print(f"New Epoch. Loss: {res}")
 
 
-#Utils
+# Utils
 
-def avg_correct_label(y_hat: torch.Tensor, y:torch.Tensor) -> float:
+
+def avg_correct_label(y_hat: torch.Tensor, y: torch.Tensor) -> float:
     f: Callable = lambda x: 1 if x == True else 0
-    bools: torch.Tensor = (y_hat == y)
+    bools: torch.Tensor = y_hat == y
     return np.mean([f(y_i) for y_i in bools])

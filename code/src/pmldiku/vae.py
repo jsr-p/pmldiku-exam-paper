@@ -639,21 +639,24 @@ class MarginalLogLikVAE:
         self,
         val_loader: torch.utils.data.DataLoader,
         model: LitVAE,
+        device: torch.device,
         latent_dim: int = 2,
         L: int = 5,
     ):
         self.val_loader = val_loader
         self.model = model
+        self.device = device
         self.latent_dim = latent_dim
         self.L = L
         self._construct_latent_dist()
         self._init_sample()
+        self.logpx_loss_fn = self.model.loss_fn.__self__.logpx_loss_fn
 
     def _construct_latent_dist(self):
         """Construct latent dist. used for all samples"""
         zero_vec = torch.zeros(self.latent_dim)
         self.mvn_latent_prior = tdist.MultivariateNormal(
-            loc=zero_vec, covariance_matrix=torch.eye(self.latent_dim)
+            loc=zero_vec.to(self.device), covariance_matrix=torch.eye(self.latent_dim).to(self.device)
         )
 
     def _init_sample(self):
@@ -664,6 +667,7 @@ class MarginalLogLikVAE:
     def estimate(self):
         counter = 0
         for X_b, _ in tqdm.tqdm(self.val_loader):
+            X_b = X_b.to(self.device)
             logpx_batch = self.estimate_batch(X_b)
             b_shape = X_b.shape[0]
             self.logpx_all[counter : counter + b_shape] = logpx_batch
@@ -698,7 +702,7 @@ class MarginalLogLikVAE:
             logqzgx = mvn_encoder.log_prob(z)
             logpz = self.mvn_latent_prior.log_prob(z)
             recon_x = self.model.vae.decode(z)
-            logpxgz = -self.model.loss_fn.logpx_loss_fn(recon_x, x.view(-1, 784))
+            logpxgz = -self.logpx_loss_fn(recon_x, x.view(-1, 784))
             samples[j] = logpxgz + logpz - logqzgx
         logpx = -np.log(self.L) + torch.logsumexp(samples, dim=0)
         return logpx
