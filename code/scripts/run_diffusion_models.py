@@ -87,16 +87,6 @@ def run_diffusion_model(unet: bool = False):
     figs_path = pmldiku.FP_FIGS
     output_utils.save_fig(fig, figs_path, f"{model_name}-reconstruction")
 
-    standardized_ims = (ims - ims.mean()) / ims.std()
-    fig = model_utils.plot_image_reconstruction(
-        standardized_ims[0:9].cpu().detach().numpy().reshape(9, 28, 28),
-        num_cols=3,
-        slim=0,
-        title=f"{model_name} diffusion",
-        multi_title=False,
-    )
-    output_utils.save_fig(fig, figs_path, f"{model_name}-reconstruction")
-
 
 def main():
     run_diffusion_model(unet=True)
