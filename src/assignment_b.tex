@@ -58,15 +58,14 @@ We consider algorithm 1 in a setting with $T=50$ iterations and $n=20$ repetitio
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.5\textwidth]{src/algorithm1plot.png}
+    \includegraphics[width=0.475\textwidth]{src/algorithm1plot.png}
     \caption{Sampled $f^*$, $f$, and  $p(f^*|x^*,\mathcal{D}, \bm{\theta}^{(k)})$ at $k=$0,5,10 iterations.}
     \label{fig:algorithm1}
 \end{figure}
-By inspection of \autoref{fig:performance1} we note that algorithm 1 (denoted alg\_1\_RBF) did not manage to find global optimum in 7 out of 50 repetitions, which is indicated by values of zero. In particular, the decision rule implies that the algorithm in some repetitions becomes overconfident in regions with local optima. Thus, there is a very low probability that values of the sampled $f^*$ in the region of the global optimum will lie below the value of the sampled $f^*$ in the region of the local optimum, and hence a low probability that the algorithm will explore the region of the global optimum. This is evident from \autoref{fig:algorithm1}, where the probability that the sampled value of $f^*$ in the region of the global optimum attains a value that lies below the sampled value of $f^*$ in the region of the local optimum is less than 0.025\footnote{Values two standard deviations above the mean are not relevant, hence 0.025.}. This can be deduced by noting that $f^*$ in the region of the global optimum must attain a value that lies more than two standard deviations away from the mean. 
+By inspection of \autoref{fig:performance1} we note that algorithm 1 (denoted alg\_1\_RBF) did not manage to find global optimum in 7 out of 50 repetitions, which is indicated by values of zero. In particular, the decision rule implies that the algorithm in some repetitions becomes overconfident in regions with local optima. Thus, there is a very low probability that values of the sampled $f^*$ in the region of the global optimum will lie below the value of the sampled $f^*$ in the region of the local optimum, and hence a low probability that the algorithm will explore the region of the global optimum. This is evident from \autoref{fig:algorithm1}, where the probability that the sampled value of $f^*$ in the region of the global optimum attains a value that lies below the sampled value of $f^*$ in the region of the local optimum is less than 0.025\footnote{This can be deduced by noting that $f^*$ in the region of the global optimum must attain a value that lies more than two standard deviations away from the mean. Values two standard deviations above the mean are not relevant, hence 0.025.}.
 
 \subsubsection*{Deliverable 3}
-One immediate extension to ensure that the algorithm eventually will find the global minimum is to not allow for repeated decisions in terms of the added point, $(x_p^*, f(x_p^*))$. In this way, the algorithm is forced to explore alternative optima by considering the optimal point among the set of points, in which the previous sampled points are not included. Since $f(x)$ is assumed to be noiseless, no information is gained by resampling the same point. We denote this algorithm 1.1.\\
-Another alternative is to incorporate the information contained in $p(f^*|x^*,\mathcal{D},\bm{\theta}^{(i)})$ directly into the decision rule. One way to do so is the GP-LCB algorithm proposed by \cite{Srinivas_2012}, where the decision rule is given by:
+One immediate extension to ensure that the algorithm eventually will find the global minimum is to not allow for repeated decisions in terms of the added point, $(x_p^*, f(x_p^*))$. In this way, the algorithm is forced to explore alternative optima by considering the optimal point among the set of points, in which the previous sampled points are not included. Since $f(x)$ is assumed to be noiseless, no information is gained by resampling the same point. We denote this algorithm 1.1. Another alternative is to incorporate the information contained in $p(f^*|x^*,\mathcal{D},\bm{\theta}^{(i)})$ directly into the decision rule. One way to do so is the GP-LCB algorithm proposed by \cite{Srinivas_2012}, where the decision rule is given by:
 \begin{equation}
     x_p^* = \argmin_i \left\{ \mu_{\bm{\theta}}^*(x_i^*) - \sqrt{\beta}_k \sigma_{\bm{\theta}}^*(x_i^*)\right\}, \qquad \beta_k = \phi\cdot\ln(k)
 \end{equation}
@@ -91,11 +90,11 @@ Another way to make the algorithms more exploratory can be induced by choosing a
         \caption[]
         {Number of iterations until global minimum is found. 0 iterations indicate that the that the global is never found. (a) With $\sigma_\mathit{s}^2\sim\text{LogNormal}(0, 2)$ (b) With $\sigma_\mathit{s}^2\sim\text{LogNormal}(1.7, 0.3)$.} 
         \label{fig:performanceplots}
-    \end{figure}
-
+\end{figure}
+    
 \begin{table}[H]
 \centering
-\resizebox{\textwidth}{!}{\begin{tabular}{llllllr}
+\resizebox{12cm}{!}{\begin{tabular}{llllllr}
 \toprule
   &  alg\_1\_RBF & alg\_1.1\_RBF & alg\_1.1\_M32 & GP\_LCB\_RBF &  GP\_LCB\_M32 \\
 \midrule
