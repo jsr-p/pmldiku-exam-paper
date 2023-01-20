@@ -9,6 +9,10 @@ from torch import nn, optim
 
 # --------------------- UNET --------------------- #
 
+# WE HAVE FOLLOWED THIS BLOGPOST WITH REGARD TO IMPLEMENTATION DETAILS
+# ON HOW TO CONSTRUCT A DIFFUSION MODEL AND CREATE A UNET: https://medium.com/mlearning-ai/enerating-images-with-ddpms-a-pytorch-implementation-cef5a2ba8cb1
+# THAT IS AN IMPLEMENTATION OF THE ORIGINAL PAPER https://arxiv.org/abs/2006.11239
+# 
 
 def sinusoidal_embedding(n: int, d: int) -> torch.Tensor:
     """returns embeddings"""
