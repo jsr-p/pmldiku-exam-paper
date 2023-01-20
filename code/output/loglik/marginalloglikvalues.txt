@@ -1,0 +1,9 @@
+mnist-vanilla-mse, -11.631982803344727
+mnist-conv-mse, -11.794448852539062
+mnist-bayes-mse, -31.974674224853516
+mnist-vanilla-bce, -41.53453826904297
+mnist-conv-bce, -42.51396179199219
+mnist-bayes-bce, -61.810508728027344
+mnist-vanilla-cb, 2033.2275390625
+mnist-conv-cb, 2063.430419921875
+mnist-bayes-cb, 1988.123779296875
