@@ -1,6 +1,6 @@
+import math
 from dataclasses import dataclass
 from pathlib import Path
-import math
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -15,14 +15,19 @@ def plot_img(img: np.ndarray):
 
 
 def plot_loss(loss: np.ndarray, **kwargs):
-    fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(4, 4))
+    _, ax = plt.subplots(nrows=1, ncols=1, figsize=(4, 4))
     ts = np.arange(1, loss.shape[0] + 1)
     ax.plot(ts, loss)
     ax.set(title="Loss", xlabel="epoch", ylabel="loss", **kwargs)
 
 
 def plot_image_reconstruction(
-    images: np.ndarray, num_cols: int = 3, slim: int = 30, start: int = 0, multi_title=True, **kwargs
+    images: np.ndarray,
+    num_cols: int = 3,
+    slim: int = 30,
+    start: int = 0,
+    multi_title=True,
+    **kwargs,
 ):
     """Plots reconstructed images in a grid.
 
@@ -37,9 +42,9 @@ def plot_image_reconstruction(
     fig, axes = plt.subplots(
         nrows=num_rows, ncols=num_cols, figsize=(4 * num_rows, 4 * num_cols)
     )
-    
+
     for i, ax in zip(range(start, N + start), axes.flatten()):  # type: ignore
-        
+
         ax.imshow(images[i - start], cmap="gray")
         if multi_title:
             ax.set(title=f"{kwargs['title']} {i + 1}")
@@ -108,20 +113,24 @@ def plot_gauss_grid_imgs(decoded_imgs: np.ndarray):
 def compute_outputdim_cv(I: int, F: int, P: int, S: int):
     """Computes the output dimension of an image after convolution.
 
+    See:
+        https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html
+
     Args:
         I: Length of input volumne (img. dimension)
         F: Length of filter
         P: Padding length
         S: Stride length
+
     Return:
         (int): output img. dimension
     """
-    O = (I - F + 2 * P) // S + 1
+    O = math.floor((I + 2 * P - F) / S + 1)
     return O
 
 
 def filesize(fp: Path):
-    size_mb = fp.stat().st_size / 10 ** 6
+    size_mb = fp.stat().st_size / 10**6
     return size_mb
 
 
@@ -144,7 +153,13 @@ def show_trained_models() -> TrainedModels:
     trained_models.print_overview()
     return trained_models
 
-def save_image_tensor(images: torch.Tensor, path: Path, fname:str, strict: bool=True, ) -> None:
+
+def save_image_tensor(
+    images: torch.Tensor,
+    path: Path,
+    fname: str,
+    strict: bool = True,
+) -> None:
     """Saves images
     images: Tensor with images
     strict: ensures tensor is of shape (10000, 1, 28, 28
@@ -153,10 +168,10 @@ def save_image_tensor(images: torch.Tensor, path: Path, fname:str, strict: bool=
         assert images.shape == (10000, 1, 28, 28)
     torch.save(images, path / Path(fname))
 
+
 def load_image_tensor(path: Path, fname: str) -> torch.Tensor:
     return torch.load(path / Path(fname))
 
 
 if __name__ == "__main__":
     print(pmldiku.FP_MODELS)
-
