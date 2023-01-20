@@ -246,52 +246,6 @@ class BayesVAE(pl.LightningModule):
 # --------------------- Convolutional VAE --------------------- #
 
 
-class BayesVAEConv2dTransposeParams:
-    def __init__(
-        self,
-        in_channels: int,
-        out_channels: int,
-        stride: tuple[int, int],
-        kernel_size: tuple[int, int],
-        padding: int
-    ):
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.stride = stride
-        self.kernel_size = kernel_size
-        self.k1, self.k2 = self.kernel_size
-        self.padding = padding
-        self.weights = torch.empty(self.in_channels, self.out_channels, self.k1 , self.k2)
-        self.bias = torch.empty(self.out_channels)
-
-    def __call__(self, input: torch.Tensor):
-        return F.conv_transpose2d(input, weight=self.weights, bias=self.bias, stride=self.stride, padding=self.padding)
-
-    def unpack(self, start_idx: int, theta: torch.Tensor) -> int:
-        num_weight_params = self.num_weight_params()
-        num_bias_params = self.num_bias_params()
-        weights_idx = start_idx + num_weight_params
-        bias_idx = weights_idx + num_bias_params
-        weights = theta[start_idx:weights_idx]
-        bias = theta[weights_idx:bias_idx]
-        self.update_params(weights, bias)
-        return bias_idx
-
-    def update_params(self, weights: torch.Tensor, bias: torch.Tensor):
-        """Updates the parameters with the slice from the drawn theta"""
-        self.weights = weights.view((self.in_channels, self.out_channels, self.k1 , self.k2))
-        self.bias = bias
-
-    def total_params(self):
-        return self.num_weight_params() + self.num_bias_params()
-
-    def num_weight_params(self):
-        return self.in_channels * self.out_channels * self.k1 * self.k2
-
-    def num_bias_params(self):
-        return self.out_channels
-
-
 class CVAE(pl.LightningModule):
     """Implementation of the convolutional variational autoencoder.
 
@@ -431,190 +385,6 @@ class CVAE(pl.LightningModule):
         std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
         return mu + eps * std
-
-
-class BayesCVAE(pl.LightningModule):
-    def __init__(self, hidden_dim: int = 2):
-        super(BayesCVAE, self).__init__()
-        self.hidden_dim = hidden_dim
-        # Init network
-        self._init_encoder()
-        self._encode_cv_dim()
-        self.fc_mean = nn.Linear(self.total_dim_encoder, hidden_dim)
-        self.fc_logvar = nn.Linear(self.total_dim_encoder, hidden_dim)
-        self._init_decoder()
-
-        self._init_posterior_theta()
-        # pytorch_lightning won't capture the params if we
-        # intialize them inside `_init_posterior_theta`
-        self.mu_theta = nn.Parameter(torch.randn(self.total_params_theta))
-        self.logvar_theta = nn.Parameter(torch.randn(self.total_params_theta))
-
-    def _init_encoder(self):
-        self.encoder = nn.Sequential(
-            nn.Conv2d(
-                in_channels=1,
-                out_channels=32,
-                stride=(1, 1),
-                kernel_size=(3, 3),
-                padding=1,
-            ),
-            nn.LeakyReLU(),
-            nn.Conv2d(
-                in_channels=32,
-                out_channels=64,
-                stride=(2, 2),
-                kernel_size=(3, 3),
-                padding=1,
-            ),
-            nn.LeakyReLU(),
-            nn.Conv2d(
-                in_channels=64,
-                out_channels=64,
-                stride=(2, 2),
-                kernel_size=(3, 3),
-                padding=1,
-            ),
-            nn.LeakyReLU(),
-            nn.Conv2d(
-                in_channels=64,
-                out_channels=64,
-                stride=(1, 1),
-                kernel_size=(3, 3),
-                padding=1,
-            ),
-            nn.Flatten(),
-        )
-
-    def _encode_cv_dim(self):
-        """Computes the dimension of input img. after encoder layer."""
-        # Dimension of image after applying first convlayer
-        dim_cv1 = model_utils.compute_outputdim_cv(I=28, F=3, P=1, S=1)
-        # Dimension of image after applying second convlayer
-        dim_cv2 = model_utils.compute_outputdim_cv(
-            I=dim_cv1, F=3, P=1, S=2
-        )
-        dim_cv3 = model_utils.compute_outputdim_cv(
-            I=dim_cv2, F=3, P=1, S=2
-        )
-        self.img_dim_encoder = model_utils.compute_outputdim_cv(
-            I=dim_cv3, F=3, P=1, S=1
-        )
-        self.total_dim_encoder = 64 * (self.img_dim_encoder**2)
-
-    def _init_decoder(self):
-        self.decoder: dict[str, BayesVAELinearParams | BayesVAEConv2dTransposeParams] = OrderedDict()
-        self.decoder["f1"] = BayesVAELinearParams(self.hidden_dim, self.total_dim_encoder)
-        self.unflattenf1 = nn.Unflatten(
-            dim=1, unflattened_size=[64, self.img_dim_encoder, self.img_dim_encoder]
-        )
-        self.decoder["f2t2d"] = BayesVAEConv2dTransposeParams(
-            in_channels=64,
-            out_channels=64,
-            stride=(1, 1),
-            kernel_size=(3, 3),
-            padding=1,
-        )
-        self.decoder["f3t2d"] = BayesVAEConv2dTransposeParams(
-            in_channels=64,
-            out_channels=64,
-            stride=(2, 2),
-            kernel_size=(3, 3),
-            padding=1,
-        )
-        self.decoder["f4t2d"] = BayesVAEConv2dTransposeParams(
-            in_channels=64,
-            out_channels=32,
-            stride=(2, 2),
-            kernel_size=(3, 3),
-            padding=1,
-        )
-        self.decoder["f5t2d"] = BayesVAEConv2dTransposeParams(
-            in_channels=32,
-            out_channels=1,
-            stride=(1, 1),
-            kernel_size=(4, 4),
-            padding=0,
-        )
-
-    def _init_posterior_theta(self):
-        """Initializes the parameters for variational posterior for theta."""
-        self.total_params_theta = sum(
-            [layer.total_params() for _, layer in self.decoder.items()]
-        )
-
-    def draw_posterior_theta(self) -> torch.Tensor:
-        theta = self.reparameterize(self.mu_theta, self.logvar_theta)
-        return theta
-
-    def forward(self, x: torch.Tensor) -> VAEOutput:
-        """Forward pass of the VAE.
-
-        Args:
-            x: Image tensor of dim. (B, W, H)
-
-        Returns:
-            (VAEOutput):
-                decoded image, encoder mean, encoder log(variance).
-        """
-        z, mu, logvar = self.sample(x)
-        return self.decode(z), mu, logvar
-
-    def update_decoder_params(self, theta: torch.Tensor):
-        next_param_idx = 0
-        for layer in self.decoder.values():
-            next_param_idx = layer.unpack(next_param_idx, theta)
-        assert next_param_idx == self.total_params_theta
-
-    def sample(self, x: torch.Tensor):
-        """Samples from the encoder distribution.
-
-        Returns:
-            sample, encoder mean, encoder log(variance)
-        """
-        mu, logvar = self.encode(x)
-        z = self.reparameterize(mu, logvar)
-        return z, mu, logvar
-
-    def encode(self, X: torch.Tensor) -> EncoderOutput:
-        """Encodes the input image tensor.
-
-        The image is encoded into the mean and variance
-        of the encoder distribution q(z | x).
-
-        Args:
-            X: (B, 784) dimensional image tensor
-
-        Returns:
-            (EncoderOutput):
-                Mean and variance of encoder distribution.
-        """
-        X = self.encoder(X)
-        mu, logvar = self.fc_mean(X), self.fc_logvar(X)
-        return mu, logvar
-
-    def reparameterize(self, mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
-        """Draws z ~ q(z | x) using the reparameterization trick."""
-        std = torch.exp(0.5 * logvar)
-        eps = torch.randn_like(std)
-        return mu + eps * std
-
-    def decode(self, z: torch.Tensor) -> torch.Tensor:
-        """Decodes sample from the latent distribution.
-
-        The sample from the latent distribution is decoded
-        into an image tensor.
-
-        Returns:
-            (B, 784) tensor of decoded images.
-        """
-        theta = self.draw_posterior_theta()
-        self.update_decoder_params(theta)
-        h1 = self.unflattenf1(self.decoder["f1"](z))
-        h2 = F.leaky_relu(self.decoder["f2t2d"](h1))
-        h3 = F.leaky_relu(self.decoder["f3t2d"](h2))
-        h4 = F.leaky_relu(self.decoder["f4t2d"](h3))
-        return torch.sigmoid(self.decoder["f5t2d"](h4)).view(-1, 784)
 
 
 # --------------------- Loss functions --------------------- #
@@ -936,3 +706,236 @@ class MarginalLogLikVAE:
             samples[j] = logpxgz + logpz - logqzgx
         logpx = -np.log(self.L) + torch.logsumexp(samples, dim=0)
         return logpx
+
+
+# --------------------- Other --------------------- #
+
+
+class BayesVAEConv2dTransposeParams:
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        stride: tuple[int, int],
+        kernel_size: tuple[int, int],
+        padding: int
+    ):
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.stride = stride
+        self.kernel_size = kernel_size
+        self.k1, self.k2 = self.kernel_size
+        self.padding = padding
+        self.weights = torch.empty(self.in_channels, self.out_channels, self.k1 , self.k2)
+        self.bias = torch.empty(self.out_channels)
+
+    def __call__(self, input: torch.Tensor):
+        return F.conv_transpose2d(input, weight=self.weights, bias=self.bias, stride=self.stride, padding=self.padding)
+
+    def unpack(self, start_idx: int, theta: torch.Tensor) -> int:
+        num_weight_params = self.num_weight_params()
+        num_bias_params = self.num_bias_params()
+        weights_idx = start_idx + num_weight_params
+        bias_idx = weights_idx + num_bias_params
+        weights = theta[start_idx:weights_idx]
+        bias = theta[weights_idx:bias_idx]
+        self.update_params(weights, bias)
+        return bias_idx
+
+    def update_params(self, weights: torch.Tensor, bias: torch.Tensor):
+        """Updates the parameters with the slice from the drawn theta"""
+        self.weights = weights.view((self.in_channels, self.out_channels, self.k1 , self.k2))
+        self.bias = bias
+
+    def total_params(self):
+        return self.num_weight_params() + self.num_bias_params()
+
+    def num_weight_params(self):
+        return self.in_channels * self.out_channels * self.k1 * self.k2
+
+    def num_bias_params(self):
+        return self.out_channels
+
+
+class BayesCVAE(pl.LightningModule):
+    def __init__(self, hidden_dim: int = 2):
+        super(BayesCVAE, self).__init__()
+        self.hidden_dim = hidden_dim
+        # Init network
+        self._init_encoder()
+        self._encode_cv_dim()
+        self.fc_mean = nn.Linear(self.total_dim_encoder, hidden_dim)
+        self.fc_logvar = nn.Linear(self.total_dim_encoder, hidden_dim)
+        self._init_decoder()
+
+        self._init_posterior_theta()
+        # pytorch_lightning won't capture the params if we
+        # intialize them inside `_init_posterior_theta`
+        self.mu_theta = nn.Parameter(torch.randn(self.total_params_theta))
+        self.logvar_theta = nn.Parameter(torch.randn(self.total_params_theta))
+
+    def _init_encoder(self):
+        self.encoder = nn.Sequential(
+            nn.Conv2d(
+                in_channels=1,
+                out_channels=32,
+                stride=(1, 1),
+                kernel_size=(3, 3),
+                padding=1,
+            ),
+            nn.LeakyReLU(),
+            nn.Conv2d(
+                in_channels=32,
+                out_channels=64,
+                stride=(2, 2),
+                kernel_size=(3, 3),
+                padding=1,
+            ),
+            nn.LeakyReLU(),
+            nn.Conv2d(
+                in_channels=64,
+                out_channels=64,
+                stride=(2, 2),
+                kernel_size=(3, 3),
+                padding=1,
+            ),
+            nn.LeakyReLU(),
+            nn.Conv2d(
+                in_channels=64,
+                out_channels=64,
+                stride=(1, 1),
+                kernel_size=(3, 3),
+                padding=1,
+            ),
+            nn.Flatten(),
+        )
+
+    def _encode_cv_dim(self):
+        """Computes the dimension of input img. after encoder layer."""
+        # Dimension of image after applying first convlayer
+        dim_cv1 = model_utils.compute_outputdim_cv(I=28, F=3, P=1, S=1)
+        # Dimension of image after applying second convlayer
+        dim_cv2 = model_utils.compute_outputdim_cv(
+            I=dim_cv1, F=3, P=1, S=2
+        )
+        dim_cv3 = model_utils.compute_outputdim_cv(
+            I=dim_cv2, F=3, P=1, S=2
+        )
+        self.img_dim_encoder = model_utils.compute_outputdim_cv(
+            I=dim_cv3, F=3, P=1, S=1
+        )
+        self.total_dim_encoder = 64 * (self.img_dim_encoder**2)
+
+    def _init_decoder(self):
+        self.decoder: dict[str, BayesVAELinearParams | BayesVAEConv2dTransposeParams] = OrderedDict()
+        self.decoder["f1"] = BayesVAELinearParams(self.hidden_dim, self.total_dim_encoder)
+        self.unflattenf1 = nn.Unflatten(
+            dim=1, unflattened_size=[64, self.img_dim_encoder, self.img_dim_encoder]
+        )
+        self.decoder["f2t2d"] = BayesVAEConv2dTransposeParams(
+            in_channels=64,
+            out_channels=64,
+            stride=(1, 1),
+            kernel_size=(3, 3),
+            padding=1,
+        )
+        self.decoder["f3t2d"] = BayesVAEConv2dTransposeParams(
+            in_channels=64,
+            out_channels=64,
+            stride=(2, 2),
+            kernel_size=(3, 3),
+            padding=1,
+        )
+        self.decoder["f4t2d"] = BayesVAEConv2dTransposeParams(
+            in_channels=64,
+            out_channels=32,
+            stride=(2, 2),
+            kernel_size=(3, 3),
+            padding=1,
+        )
+        self.decoder["f5t2d"] = BayesVAEConv2dTransposeParams(
+            in_channels=32,
+            out_channels=1,
+            stride=(1, 1),
+            kernel_size=(4, 4),
+            padding=0,
+        )
+
+    def _init_posterior_theta(self):
+        """Initializes the parameters for variational posterior for theta."""
+        self.total_params_theta = sum(
+            [layer.total_params() for _, layer in self.decoder.items()]
+        )
+
+    def draw_posterior_theta(self) -> torch.Tensor:
+        theta = self.reparameterize(self.mu_theta, self.logvar_theta)
+        return theta
+
+    def forward(self, x: torch.Tensor) -> VAEOutput:
+        """Forward pass of the VAE.
+
+        Args:
+            x: Image tensor of dim. (B, W, H)
+
+        Returns:
+            (VAEOutput):
+                decoded image, encoder mean, encoder log(variance).
+        """
+        z, mu, logvar = self.sample(x)
+        return self.decode(z), mu, logvar
+
+    def update_decoder_params(self, theta: torch.Tensor):
+        next_param_idx = 0
+        for layer in self.decoder.values():
+            next_param_idx = layer.unpack(next_param_idx, theta)
+        assert next_param_idx == self.total_params_theta
+
+    def sample(self, x: torch.Tensor):
+        """Samples from the encoder distribution.
+
+        Returns:
+            sample, encoder mean, encoder log(variance)
+        """
+        mu, logvar = self.encode(x)
+        z = self.reparameterize(mu, logvar)
+        return z, mu, logvar
+
+    def encode(self, X: torch.Tensor) -> EncoderOutput:
+        """Encodes the input image tensor.
+
+        The image is encoded into the mean and variance
+        of the encoder distribution q(z | x).
+
+        Args:
+            X: (B, 784) dimensional image tensor
+
+        Returns:
+            (EncoderOutput):
+                Mean and variance of encoder distribution.
+        """
+        X = self.encoder(X)
+        mu, logvar = self.fc_mean(X), self.fc_logvar(X)
+        return mu, logvar
+
+    def reparameterize(self, mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
+        """Draws z ~ q(z | x) using the reparameterization trick."""
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return mu + eps * std
+
+    def decode(self, z: torch.Tensor) -> torch.Tensor:
+        """Decodes sample from the latent distribution.
+
+        The sample from the latent distribution is decoded
+        into an image tensor.
+
+        Returns:
+            (B, 784) tensor of decoded images.
+        """
+        theta = self.draw_posterior_theta()
+        self.update_decoder_params(theta)
+        h1 = self.unflattenf1(self.decoder["f1"](z))
+        h2 = F.leaky_relu(self.decoder["f2t2d"](h1))
+        h3 = F.leaky_relu(self.decoder["f3t2d"](h2))
+        h4 = F.leaky_relu(self.decoder["f4t2d"](h3))
+        return torch.sigmoid(self.decoder["f5t2d"](h4)).view(-1, 784)

@@ -55,9 +55,6 @@ latex.out/
 acs-*.bib
 
 
-output/
-
-
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
