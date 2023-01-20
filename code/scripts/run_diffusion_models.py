@@ -1,9 +1,13 @@
+from pathlib import Path
 import numpy as np
 import pytorch_lightning as pl
 import torch
 import torch.utils.data
-from pytorch_lightning.callbacks import (EarlyStopping, LearningRateMonitor,
-                                         ModelCheckpoint)
+from pytorch_lightning.callbacks import (
+    EarlyStopping,
+    LearningRateMonitor,
+    ModelCheckpoint,
+)
 from torchvision.transforms import Compose, Lambda, ToTensor
 
 import pmldiku
@@ -33,8 +37,12 @@ loader = data.load_mnist(train=True, trans=transform).setup_data_loader(
     batch_size=batch_size, **kwargs
 )
 
+tensor_path = pmldiku.FP_OUTPUT / "image-tensors"
+Path.mkdir(tensor_path, exist_ok=True)
+
 
 # --------------------- Run model --------------------- #
+
 
 def run_diffusion_model(unet: bool = False):
     torch.manual_seed(1)
@@ -46,9 +54,14 @@ def run_diffusion_model(unet: bool = False):
         model_name = "ConvNet"
 
     model = diffusion.LightningDiffusion(config=config, network=network, verbose=True)
-
+    model_cp_name = f"mnist-diffusion-{model_name}"
+    checkpoint_fname = model_cp_name + "{epoch:02d}-{val_loss:.2f}"
+    print(f"Logging model with name {model_cp_name}")
     cb_model_checkpoint, cb_early_stopping, cb_loss, cb_lr_monitor = (
-        ModelCheckpoint(),
+        ModelCheckpoint(
+            dirpath=pmldiku.FP_MODELS,
+            filename=checkpoint_fname,
+        ),
         EarlyStopping("mse_metric"),
         diffusion_utils.DiffusionLossCallback(),
         LearningRateMonitor("step"),
@@ -72,11 +85,12 @@ def run_diffusion_model(unet: bool = False):
 
     losses = np.array(cb_loss.train_loss)
     model_utils.plot_loss(losses)
-    ims = model.to(device).generate(10000)
-    tensor_path = pmldiku.FP_OUTPUT / "image-tensors"
 
+    ims = model.to(device).generate(10000)
     standardized_ims = ((ims - ims.mean()) / ims.std()).cpu()
-    model_utils.save_image_tensor(standardized_ims, tensor_path, f"{model_name}_diffusion.pkl")
+    model_utils.save_image_tensor(
+        standardized_ims, tensor_path, f"{model_name}_diffusion.pkl"
+    )
     fig = model_utils.plot_image_reconstruction(
         ims[0:9].cpu().detach().numpy().reshape(9, 28, 28),
         num_cols=3,
