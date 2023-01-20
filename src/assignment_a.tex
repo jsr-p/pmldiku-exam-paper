@@ -198,9 +198,9 @@ where $\mathbf{z}^{(l)} \sim q_{\phi}(\mathbf{z} \mid \mathbf{x}) $.
 Therefore, to estimate the marginal log likelihood for a single datapoint $\mathbf{x}$
 we draw $L$ observations from the encoder and compute the expression in \eqref{IS-VAE}.
 To get the estimate on the total test data we compute the expression in \eqref{IS-VAE} 
-for each data point and take the average. 
-To avoid numerical instability we use the log-sum-exp trick. Looking to table \ref{tab:loglik} we find that the bayesian model performers worst within each group of error distribution specification\footnote{\textit{MSE} denotes mean squared error, \textit{cb} denotes continuous Bernoulli, \textit{BCE} denotes binary cross-entropy}.
-
+for each data point and take the average. We set $L = 5$ and use $10000$ observations of the test set.
+To avoid numerical instability we use the log-sum-exp trick. Considering table \ref{tab:loglik} we find that the Bayesian models performers worst within each group of decoder distribution specification\footnote{\textit{MSE} denotes mean squared error, \textit{cb} denotes continuous Bernoulli, \textit{BCE} denotes binary cross-entropy}.
+There are some discrepancies between the table results and the visual inspection; this could stem from poor estimates from the importance sampler.
 \begin{table}[ht]
     \centering
     \resizebox{\textwidth}{!}{\begin{tabular}{llllllllll}
