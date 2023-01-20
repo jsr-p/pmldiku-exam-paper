@@ -373,13 +373,13 @@ class CVAE(pl.LightningModule):
         z = self.reparameterize(mu, logvar)
         return z, mu, logvar
 
-    def encode(self, X: torch.Tensor) -> EncoderOutput:
-        X = self.encoder(X)
+    def encode(self, x: torch.Tensor) -> EncoderOutput:
+        X = self.encoder(x)
         mu, logvar = self.fc_mean(X), self.fc_logvar(X)
         return mu, logvar
 
-    def decode(self, Z: torch.Tensor):
-        return self.decoder(Z).view(-1, 784)
+    def decode(self, z: torch.Tensor):
+        return self.decoder(z).view(-1, 784)
 
     def reparameterize(self, mu: torch.Tensor, logvar: torch.Tensor):
         std = torch.exp(0.5 * logvar)
@@ -496,14 +496,10 @@ class VAE(Protocol):
     def sample(self, x: torch.Tensor) -> VAEOutput:
         ...
 
-    def decode(self, x: torch.Tensor) -> torch.Tensor:
+    def decode(self, z: torch.Tensor) -> torch.Tensor:
         ...
 
-
-class Encoder(Protocol):
-    """Protocol for an encoder"""
-
-    def encode(self, X: torch.Tensor) -> EncoderOutput:
+    def encode(self, x: torch.Tensor) -> EncoderOutput:
         ...
 
 
@@ -610,7 +606,7 @@ class VAEImageReconstructionCallback(pl.Callback):
 
 
 def encode_means(
-    encoder: Encoder, test_loader: torch.utils.data.DataLoader
+    encoder: VAE, test_loader: torch.utils.data.DataLoader
 ) -> tuple[np.ndarray, np.ndarray]:
     """Encodes test data into tensor of means with corresponding labels.
 

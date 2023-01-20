@@ -72,7 +72,7 @@ def run_vae_model(model_type: str, loss_fn_name: str, hidden_dim: int = 2):
         dirpath=pmldiku.FP_MODELS,
         filename=checkpoint_fname,
     )
-    cb_earlystopping = EarlyStopping(monitor="val_loss", mode="min")
+    cb_earlystopping = EarlyStopping(monitor="val_loss", mode="min", patience=4)
     callbacks = [loss_callback, reconstruct_cb, cb_checkpoint, cb_earlystopping]
 
     # Trainer
@@ -91,12 +91,14 @@ def run_vae_model(model_type: str, loss_fn_name: str, hidden_dim: int = 2):
 
     # Reconstructed images in last epoch; for Freschet comparison
     latent_draws = torch.randn((10_000, 2))
-    decoded_imgs = model.vae.decode(latent_draws).detach().numpy()
+    decoded_imgs = model.vae.decode(latent_draws).view((10_000, 1, 28, 28))
     model_utils.save_image_tensor(
-        decoded_imgs, fp_tensor_path, f"{model_file_name}_diffusion.pkl"
+        decoded_imgs,
+        fp_tensor_path,
+        f"{model_file_name}_diffusion.pkl",
     )
     fig = model_utils.plot_image_reconstruction(
-        decoded_imgs[:9].reshape(9, 28, 28),
+        decoded_imgs[:9].detach().numpy().reshape(9, 28, 28),
         num_cols=3,
         slim=0,
         title=f"{model_file_name}-imgtensors",
@@ -109,7 +111,8 @@ def run_vae_model(model_type: str, loss_fn_name: str, hidden_dim: int = 2):
     images = reconstruct_cb.samples[-16:, 0, :, :].cpu().numpy()
     start = cb_earlystopping.stopped_epoch - 16
     fig = model_utils.plot_image_reconstruction(
-        images, num_cols=4, slim=20, start=start
+        images, num_cols=4, slim=20, start=start,
+        title=f"{model_file_name}-epoch-reconstruction",
     )
     fig.tight_layout()
     fname = pmldiku.FP_FIGS / f"{model_file_name}-image-epochs-reconstruction"
