@@ -1,0 +1,191 @@
+\section*{A – Density modeling\footnote{The associated code for the report is available at the following \href{https://github.com/jsr-p/pmldiku-exam-paper}{Github repository.}}}
+
+\subsection*{A.1 – Implement a convolutional VAE}
+The setup of the variational autoencoder model is the assumption of 
+a deep latent variable model (DLVM), which is a latent variable model 
+$p_{\bm{\theta}}(\mathbf{x}, \mathbf{z})$ whose distributions are parameterized
+by a deep neural network \citep{Kingma_2019}. 
+We are interested in conducting inference on the posterior distribution 
+$p_{\bm{\theta}}(\mathbf{z} \mid  \mathbf{x})$, which
+by Bayes' rule can be written as
+    \begin{align}
+        \label{posterior_dlvm}
+        p_{\bm{\theta}}(\mathbf{z} \mid  \mathbf{x})
+        = 
+    \frac{p_{\bm{\theta}}(\mathbf{x}, \mathbf{z})}{p_{\bm{\theta}}(\mathbf{x})}.
+    \end{align}
+For DLVMs the marginal likelihood $p_{\bm{\theta}}(\mathbf{x})$ and the posterior $p_{\bm{\theta}}(\mathbf{z} \mid  \mathbf{x})$ are intractable.
+However, approximate inference is possible using the variational autoencoder. The variational autoencoder posits a parametric inference model
+$q_{\phi}(\mathbf{z} \mid \mathbf{x})$ called the encoder. The vector
+$\mathbf{\phi}$ consists of the variational parameters which are optimized such
+that the encoder approximates the posterior distribution as shown in equation
+\eqref{posterior_dlvm}. The main objective is the evidence lower bound (ELBO):  
+\begin{align}
+    \label{ELBO}
+    \mathcal{L}_{\bm{\theta}, \bm{\phi}}(\mathbf{x})
+    &= \mathbb{E}_{q_{\bm{\phi}}(\mathbf{z} \mid  \mathbf{x})} \left[
+        \log p_{\bm{\theta}}(\mathbf{x}, \mathbf{z})
+        - \log q_{\phi}(\mathbf{z} \mid \mathbf{x})
+    \right] \\
+    &= 
+    - \mathrm{KL} \left( q_{\phi}(\mathbf{z} \mid \mathbf{x}) \mid  p_{\bm{\theta}}(\mathbf{z}) \right) 
+    + 
+    \mathbb{E}_{q_{\bm{\phi}}(\mathbf{z} \mid  \mathbf{x})} \left[
+        \log p_{\bm{\theta}}(\mathbf{x} \mid  \mathbf{z})
+    \right].
+\end{align}
+
+To optimize the objective in \eqref{ELBO} with respect to $\bm{\phi}$ and $\bm{\theta}$
+we use the reparametrization trick \cite{Kingma_2019}.
+This allows us to estimate the individual-datapoint ELBO \eqref{ELBO} 
+using a simple Monte Carlo estimator:
+first we sample a noise term $\bm{\epsilon} \sim p(\bm{\epsilon}) = \mathcal{N}(\bm{\epsilon}; \bm{0}, \bm{I})$ from a multivariate standard normal distribution; then we pass it through a function 
+$\mathbf{z} = g(\bm{\phi}, \bm{\theta}, \bm{\epsilon})$ and finally we evaluate 
+\begin{align}
+    \label{sp-ELBO}
+    \tilde{\mathcal{L}}_{\bm{\theta}, \bm{\phi}}(\mathbf{x}) 
+    =
+    q_{\bm{\phi}}(\mathbf{z} \mid  \mathbf{x}) -
+    \log p_{\bm{\theta}}(\mathbf{x} \mid  \mathbf{z}).
+\end{align}
+Using the reparametrization trick the gradient $
+    \nabla_{\bm{\theta}, \bm{\phi}}\tilde{\mathcal{L}}_{\bm{\theta}, \bm{\phi}}(\mathbf{x}) 
+$
+is readily optimized using the autodifferentiation framework of PyTorch \cite{pytorch}.
+
+\subsubsection*{Factorized Gaussian Encoder}
+In all of our models we assume that the encoder 
+is a Gaussian encoder with diagonal covariance matrix 
+\begin{align}
+    q_{\phi}(\mathbf{z} \mid \mathbf{x}) 
+    &= \mathcal{N}(\mathbf{z}; \bm{\mu}, \bm{\sigma}^2 \mathbf{I}) \\ 
+    (\bm{\mu}, \log \bm{\sigma}^2) 
+    &= \mathrm{EncoderNeuralNet}_{\bm{\phi}}(\mathbf{x}).
+\end{align}
+
+The resulting estimator for a single datapoint equals 
+\begin{align}\label{eq7}
+    \tilde{\mathcal{L}}_{\bm{\theta}, \bm{\phi}}(\mathbf{x}) 
+    &=
+    \frac{1}{2} \sum_{j=1}^{J} \left( 
+    1 + \log \sigma^2_j - \mu_{j} - \sigma^2_{j}
+    \right) 
+    + \log p_{\bm{\theta}}(\mathbf{x} \mid  \mathbf{z}) \\ 
+    \text{where  }  \mathbf{z} &= \bm{\mu} + \bm{\sigma} \odot \bm{\epsilon}, \ \
+    \bm{\epsilon} \sim  \mathcal{N}(\bm{0}, \bm{I}).
+\end{align}
+
+\subsubsection*{Decoder}
+The term  $\log p_{\bm{\theta}}(\mathbf{x} \mid  \mathbf{z})$ takes three different forms depending on our three separate assumptions:
+\begin{itemize}
+    \item [1.] $\mathbf{x} \mid  \mathbf{z}$ is Gaussian  distributed 
+    \item [2.] $\mathbf{x} \mid  \mathbf{z}$ is Bernoulli distributed 
+    \item [3.] $\mathbf{x} \mid  \mathbf{z}$ is Continuous Bernoulli  distributed 
+\end{itemize}
+1. is motivated by the fact that the standardized MNIST data is continuous in [0,1] interval. However in practice, the distribution of the pixels in MNIST are largely skewed towards 0 and 1 favoring the Bernoulli assumption. These two considerations jointly motivate the third assumption. 1. implies that MSE is used for the reconstruction error in \ref{eq7}, whereas 2. implies BCE, and 3. implies BCE plus a constant (see \cite{CB}).
+
+\subsection*{A.2 – Alternative models}
+\subsubsection*{Fully Bayesian VAE}
+We extend our preferred VAE from the previous section to a fully Bayesian VAE with $N(0,1)$ priors. Images are shown in figure ?, and marginal log-likelihoods are shown in table ?. Cite \cite{BVAE} (BVAE article)
+
+\subsubsection*{Denoising Diffusion Probabilistic Models}
+We implement a diffusion model as a SOTA generative image model \cite{diffusion2020}. In the interest of report length and due to the fact it has been material in the lectures, we will not go through the derivation but only give a brief summary of the model. Fundamentally, the modes encoding part, consist of additively adding Gaussian noise to images. This goes for $T$ steps until the original image is indistinguishable from Gaussian noise. More precisely we can consider the noise process a Markov chain of the form as described in \cite[p. 860, eq. 25.1]{pml2Book}:
+
+\begin{equation}
+    q(x_t \mid x_{t-1} = \mathcal{N}(x_t \mid \sqrt{1 - \beta} x_{t-1}, \beta_t\mathbf{I})
+\end{equation}
+
+$\beta_t \in (0, 1)$ is chosen to follow a schedule, which defines the amount of noise. And transforming these $\beta$s yields $\alpha_t = 1 - \beta_t$ and from here we define $ \Pi_{s=1}^t \alpha_s$. Using this we can construct our loss function:
+
+\begin{equation}
+    \lambda_t\Vert \epsilon - \epsilon_\theta (\sqrt{\bar{\alpha}} x_0 + \sqrt{1-\bar{\alpha}}\epsilon, t) \Vert^2
+\end{equation}
+
+As described in \cite[p.863, eq. 25.23 and 25.24]{pml2Book} the model performs best when $\lambda_t$ is set to 1. In essence, we can see the predicting problem as removing noise from a noisy image, getting to a $t=1$ step less noise image. From here we can consider the denoising problem as starting by sampling an "image" of multivariate Gaussian noise, and iteratively using the trained neural network. More formally, we can consider the de-noising problem as $p_{\theta}(x_{t-1}\mid x_t) = \mathcal{N}\left(x_{t-1} ; \mu_{\theta}(x_t, t), \Sigma_{\theta}(x_t, t)\right)$, where the $\mu_\theta, \Sigma_\theta$ denotes the neural parametrization of a neural network. We use a convolutional neural network to de-noise the images, where we embed the time-step dimension using sinusoidal transformation because neural networks struggle to embed time.
+We sample  $t\sim \mathcal{U}(0, T), \epsilon \sim \mathcal{N}(0, 1)$ and we choose the $T=1000, \beta_{min} = 10^{-4}, \beta_{max} = 0.2$ as done in the original paper \cite{diffusion2020} and we also generate the $\beta$'s with equal distance. We use both and standard convolutional net, and a UNet architecture for the decoding neural network. We use the empirical mean and standard deviation for scaling inputs\footnote{Scaling the inputs turns out to be incredibly important. Originally we scaled by the pixels so min = -1 and max = 1, but we found the performance increased using the empirical mean and std of the data. The original paper uses a more intricate scaling procedure \cite{diffusion2020}, which probably could improve performance more had we had more time}. 
+
+\subsection*{Assessing Generative Models}
+
+We consider three ways of assessing our general models: Visual inspection, marginal likelihood in the case of VAE-type models, and as a last measure we use the Fréchet inception distance (FID). 
+
+\subsubsection*{Visual Inspection}
+
+look to the appendix to see generated images. We find in general the VAEs outperform the diffusion models. Especially the simple convolutional implementation of a diffusion model, seems to be totally unable to generate images. The Unet implementation, does seem to be able to generate realistic pictures, however, the digits generated, do not seem to really resemble digits. Conversely the convolution VAEs seem to do a very good job generating photo realistic images! Especially when the Continuous Bernoulli is used to estimate the likelihood of the reconstruction loss, do the generated images seem to be very close to real handwritten digits. 
+
+\subsubsection*{Marginal Likelihood}
+The marginal (log) likelihood as a tool for model selection can be motivated by considering a posterior distribution over models, $p(m|X)$, in which we assume a uniform prior over models. Computing the MAP estimate of $p(m|X)$ is then equivalent to selecting the model with the highest marginal likelihood, $p(X|m)$. To estimate the marginal log likelihood of the VAE models we use importance sampling as suggested in \cite{importancesampling}. The marginal log likelihood can be rewritten as
+
+\begin{align}
+	\nonumber
+	\log p_{\bm{\theta}}(\mathbf{x}) = \log \int p_{\bm{\theta}}(\mathbf{x}, \mathbf{z})
+	\frac{q_{\phi}(\mathbf{z} \mid \mathbf{x})}{q_{\phi}(\mathbf{z} \mid \mathbf{x})}
+	d \mathbf{z}                                                                                      
+	                                 & =
+	\nonumber
+	\log \mathbb{E}_{q_{\bm{\phi}}(\mathbf{z} \mid  \mathbf{x})} \left[
+		\frac{
+			p_{\bm{\theta}}(\mathbf{x}, \mathbf{z})
+		}{q_{\phi}(\mathbf{z} \mid \mathbf{x})}
+	\right]                                                                                             \\
+	\label{IS-VAE}
+	\Leftrightarrow
+	\log p_{\bm{\theta}}(\mathbf{x}) & \approx
+	\log \frac{1}{L} \sum_{l=1}^{L}
+	\frac{
+		p_{\bm{\theta}}(\mathbf{x} \mid  \mathbf{z}^{(l)}) p_{\bm{\theta}}(\mathbf{z})
+	}{
+		q_{\phi}(\mathbf{z}^{(l)} \mid \mathbf{x})
+	}
+\end{align}
+
+\iffalse
+
+\begin{align}
+	\nonumber
+	\log p_{\bm{\theta}}(\mathbf{x}) & = \log \int p_{\bm{\theta}}(\mathbf{x}, \mathbf{z})
+	\frac{q_{\phi}(\mathbf{z} \mid \mathbf{x})}{q_{\phi}(\mathbf{z} \mid \mathbf{x})}
+	d \mathbf{z}                                                                                        \\
+	                                 & =
+	\nonumber
+	\log \mathbb{E}_{q_{\bm{\phi}}(\mathbf{z} \mid  \mathbf{x})} \left[
+		\frac{
+			p_{\bm{\theta}}(\mathbf{x}, \mathbf{z})
+		}{q_{\phi}(\mathbf{z} \mid \mathbf{x})}
+	\right]                                                                                             \\
+	\label{IS-VAE}
+	\Leftrightarrow
+	\log p_{\bm{\theta}}(\mathbf{x}) & \approx
+	\log \frac{1}{L} \sum_{l=1}^{L}
+	\frac{
+		p_{\bm{\theta}}(\mathbf{x} \mid  \mathbf{z}^{(l)}) p_{\bm{\theta}}(\mathbf{z})
+	}{
+		q_{\phi}(\mathbf{z}^{(l)} \mid \mathbf{x})
+	}
+\end{align}
+
+\fi
+
+where $\mathbf{z}^{(l)} \sim q_{\phi}(\mathbf{z} \mid \mathbf{x}) $. 
+Therefore, to estimate the marginal log likelihood for a single datapoint $\mathbf{x}$
+we draw $L$ observations from the encoder and compute the expression in \eqref{IS-VAE}.
+To get the estimate on the total test data we compute the expression in \eqref{IS-VAE} 
+for each datapoint and take the average. 
+To avoid numerical instability we use the logsumexp-trick.
+
+
+HER SKAL TILFØJES TABEL 
+
+
+\subsubsection*{Fréchet Inception Distance}
+
+The FID is found by measuring the distance in the embedding space of a classifier between real data and generated data. More concretely we train a convolutional neural network on the MNIST data\footnote{It predicts the correct label with a $97\%$ probability.}, and use the last embedding layer before the prediction to calculate the distance between the real (denoted $R$) and generated (denoted $G$) assuming both follow normal distributions. 
+
+\begin{equation}
+    FID = \Vert \mu_R - \mu_G \Vert_2^2 + tr(\Sigma_R + \Sigma_G - 2 (\Sigma_R \Sigma_G)^{1/2})
+\end{equation}
+
+Note, that lower distance implies a higher quality of generated images. Following \cite[p. 775]{pml2Book} the score has shown to be sensitive to sample size so we for all models we sample 10000 images to calculate the distance. The embedding layer used for estimating the FID is 10-dimensional. The resulting scores are:
+
+INDSÆT FID SCORER
+
+Again we find that VAE's outperform diffusion models here. There multiple potential issues 
