@@ -1,5 +1,8 @@
 # How to run the code:
 
+First, create an conda environment following the guide [here](../README.md)
+and install the `pmldiku` package.
+
 ## A: 
 The results for question A are created by running the scripts inside [scripts](./scripts/) in the order:
 

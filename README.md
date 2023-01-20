@@ -1,25 +1,31 @@
 
 # PML Exam 2023
 
-- [Code](code/)
-  - [Notebooks](code/notebooks/)
-    - [A](code/notebooks/A)
-    - [B](code/notebooks/B)
-- [Overleaf link to paper](https://www.overleaf.com/1413687226krxbtspykqzj)
-- [Project description](code/PML2022_project_final.pdf)
+## Code to replicate results
 
-## Install package `pmldiku`
+- The code to replicate the results of the paper are found inside [code](code/).
+- In order to be able to replicate the results we have exported a `yml`-file with our environment inside [code](./code).
+- See the [guide](create-environment-and-install-package) on how to install the environment and package
+
+
+### Create environment and install package
 
 - Change directory into [code](code/)
-- Activate your environment of choice (tænker vi laver et env. specielt til projektet)
-- Open up a terminal and write
+- Create a new conda environment by running 
+```bash
+conda env create -f pml.yml
+```
+- Activate the environment by running
+```bash
+conda activate pml
+```
+- Install the `pmldiku` package by running (from the top of the [code](./code) directory):
 
 ```bash
 pip install -e .
 ```
 
-- You should now be able to import the package
-
+- If everything went smooth the package you should now be able to open a REPL and write:
 ```bash
 ❯ python
 Python 3.10.6 (main, Nov 14 2022, 16:10:14) [GCC 11.3.0] on linux
